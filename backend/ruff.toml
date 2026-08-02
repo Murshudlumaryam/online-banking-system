@@ -1,0 +1,11 @@
+# Codifies what CI/local checks actually run (`ruff check app alembic tests
+# scripts`) so `ruff check .` without extra flags gives the same signal —
+# previously this selection only existed as CLI flags in CI, which meant a
+# bare `ruff check` locally produced 100+ false positives (B008: FastAPI's
+# `Depends()` in argument defaults is the framework's documented pattern,
+# not a bug) and could mask a real new finding in the noise.
+line-length = 120
+
+[lint]
+select = ["E", "F", "I"]
+ignore = ["E501"]

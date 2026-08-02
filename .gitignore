@@ -1,0 +1,36 @@
+# --- Secrets — never commit real environment files ---
+.env
+.env.production
+.env.local
+*.pem
+*.key
+
+# --- Python / backend ---
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+*.egg-info/
+/backend/openapi.json
+
+# --- Node / frontend ---
+node_modules/
+dist/
+dist-ssr/
+*.tsbuildinfo
+/frontend/coverage/
+/frontend/playwright-report/
+/frontend/test-results/
+/frontend/openapi.json
+
+# --- Docker / deployment artifacts ---
+*.log
+banking-backups/
+
+# --- Editor / OS ---
+.vscode/
+.idea/
+.DS_Store

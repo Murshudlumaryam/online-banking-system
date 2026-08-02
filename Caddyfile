@@ -1,0 +1,43 @@
+# Caddy gets a real, trusted HTTPS certificate from Let's Encrypt
+# automatically the first time it starts, as long as:
+#   1. DOMAIN_NAME (below) is a real domain you own,
+#   2. its DNS A record already points at this VM's public IP, and
+#   3. ports 80 and 443 are reachable from the internet (see DEPLOYMENT.md).
+# No manual certbot/openssl steps needed.
+{$DOMAIN_NAME:localhost} {
+    encode gzip
+
+    # Everything under /api, plus the interactive docs, goes to the backend.
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
+    handle /docs* {
+        reverse_proxy backend:8000
+    }
+    handle /redoc* {
+        reverse_proxy backend:8000
+    }
+    handle /openapi.json {
+        reverse_proxy backend:8000
+    }
+    handle /health {
+        reverse_proxy backend:8000
+    }
+    handle /ready {
+        reverse_proxy backend:8000
+    }
+
+    # Everything else is the React app (static files + client-side routing).
+    handle {
+        reverse_proxy frontend:80
+    }
+
+    header {
+        # Caddy already terminates TLS and sets HSTS-friendly defaults;
+        # these mirror the backend's own security headers for the parts of
+        # the response Caddy itself generates (e.g. its error pages).
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "no-referrer"
+    }
+}

@@ -1,0 +1,51 @@
+# Production image — multi-worker gunicorn (not uvicorn --reload, which is
+# dev-only). Same base as the dev Dockerfile; the only difference is the
+# CMD, kept in a separate file so the dev image never accidentally picks up
+# production process-management assumptions (or vice versa).
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus_multiproc
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        libpq-dev \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --upgrade pip && pip install -r requirements.txt
+
+COPY . .
+
+# Runs as a non-root user in production. The multiprocess metrics directory
+# (see app/core/metrics.py + gunicorn.conf.py) needs to exist and be
+# writable by that user before gunicorn's workers start writing to it.
+RUN useradd --create-home --shell /bin/bash appuser \
+    && mkdir -p "$PROMETHEUS_MULTIPROC_DIR" \
+    && chown -R appuser:appuser /app "$PROMETHEUS_MULTIPROC_DIR"
+USER appuser
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# --workers is a starting point for a small/medium VM (2-4 vCPU). The usual
+# rule of thumb is (2 x CPU cores) + 1; tune WEB_CONCURRENCY via the
+# environment if the VM is bigger or smaller.
+#
+# The `rm -rf .../*` before gunicorn starts clears out per-worker metrics
+# files left behind by a *previous container run* on the same filesystem
+# (relevant after `docker restart`, as opposed to `up --build`, which gets
+# a fresh filesystem anyway). This is about not blending two separate
+# process lifetimes' counters together on startup — it is NOT needed
+# during normal operation: prometheus_client's multiprocess mode is
+# designed to keep each *currently-running* container's per-worker files
+# and sum them correctly, including workers gunicorn has already recycled
+# during this container's lifetime (verified manually — see gunicorn.conf.py).
+CMD ["sh", "-c", "rm -rf ${PROMETHEUS_MULTIPROC_DIR:?}/* && gunicorn app.main:app -c gunicorn.conf.py -k uvicorn.workers.UvicornWorker --workers ${WEB_CONCURRENCY:-3} --bind 0.0.0.0:8000 --access-logfile - --error-logfile - --timeout 60"]

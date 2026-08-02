@@ -1,0 +1,161 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: banking_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-banking_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-banking_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-banking_db}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-banking_user} -d ${POSTGRES_DB:-banking_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - banking_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: banking_redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - banking_network
+
+  # Isolated database for running `pytest` against, on a different port
+  # (5433) than the dev `db` service (5432) so the two can run side by side
+  # without a test session's schema teardown clobbering dev data (or vice
+  # versa) — see backend/README.md's testing notes for the history of why
+  # this matters. Only started when explicitly requested:
+  #   docker compose --profile test up -d test_db redis
+  test_db:
+    image: postgres:16-alpine
+    container_name: banking_test_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-banking_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-banking_pass}
+      POSTGRES_DB: banking_test_db
+    ports:
+      - "5433:5432"
+    tmpfs:
+      # Test data never needs to survive a restart — tmpfs also makes the
+      # per-test schema create/drop cycle noticeably faster than disk.
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-banking_user} -d banking_test_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - banking_network
+    profiles: ["test"]
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: banking_backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-banking_user}:${POSTGRES_PASSWORD:-banking_pass}@db:5432/${POSTGRES_DB:-banking_db}
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - banking_network
+
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: banking_celery_worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-banking_user}:${POSTGRES_PASSWORD:-banking_pass}@db:5432/${POSTGRES_DB:-banking_db}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.background_tasks.celery_app worker --loglevel=info
+    networks:
+      - banking_network
+
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: banking_celery_beat
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-banking_user}:${POSTGRES_PASSWORD:-banking_pass}@db:5432/${POSTGRES_DB:-banking_db}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.background_tasks.celery_app beat --loglevel=info
+    networks:
+      - banking_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: banking_frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000/api/v1}
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    command: npm run dev -- --host 0.0.0.0 --port 5173
+    networks:
+      - banking_network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  banking_network:
+    driver: bridge
