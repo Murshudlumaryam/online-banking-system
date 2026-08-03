@@ -1,4 +1,4 @@
-import { Navigate, createBrowserRouter } from "react-router-dom";
+import { Navigate, createBrowserRouter } from "@/lib/router";
 
 import { AdminRoute, GuestOnlyRoute, ProtectedRoute } from "@/components/layout/RouteGuards";
 import { AdminLayout } from "@/pages/admin/AdminLayout";

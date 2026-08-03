@@ -11,6 +11,7 @@ from app.modules.admin.schemas import (
     CreateAccountRequest,
     CreateCardRequest,
     CreateExchangeRateRequest,
+    CashOperationRequest,
     UpdateAccountStatusRequest,
     UpdateCustomerStatusRequest,
 )
@@ -142,6 +143,50 @@ async def update_account_status(
 ) -> AccountResponse:
     service = AdminService(session)
     account = await service.update_account_status(admin_user, account_id, payload)
+    return AccountResponse.model_validate(account)
+
+
+@router.post(
+    "/accounts/{account_id}/deposit",
+    response_model=AccountResponse,
+    summary="Deposit cash into an account (admin)",
+)
+async def deposit_to_account(
+    account_id: uuid.UUID,
+    payload: CashOperationRequest,
+    admin_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+) -> AccountResponse:
+    service = AdminService(session)
+    account = await service.deposit_to_account(
+        admin_user,
+        account_id,
+        amount=payload.amount,
+        currency=payload.currency,
+        note=payload.note,
+    )
+    return AccountResponse.model_validate(account)
+
+
+@router.post(
+    "/accounts/{account_id}/withdraw",
+    response_model=AccountResponse,
+    summary="Withdraw cash from an account (admin)",
+)
+async def withdraw_from_account(
+    account_id: uuid.UUID,
+    payload: CashOperationRequest,
+    admin_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+) -> AccountResponse:
+    service = AdminService(session)
+    account = await service.withdraw_from_account(
+        admin_user,
+        account_id,
+        amount=payload.amount,
+        currency=payload.currency,
+        note=payload.note,
+    )
     return AccountResponse.model_validate(account)
 
 

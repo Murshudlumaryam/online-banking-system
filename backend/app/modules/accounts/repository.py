@@ -21,6 +21,12 @@ class AccountRepository:
         result = await self._session.execute(select(Account).where(Account.id == account_id))
         return result.scalar_one_or_none()
 
+    async def get_by_id_for_update(self, account_id: uuid.UUID) -> Account | None:
+        result = await self._session.execute(
+            select(Account).where(Account.id == account_id).with_for_update()
+        )
+        return result.scalar_one_or_none()
+
     async def get_two_for_update(
         self, account_id_1: uuid.UUID, account_id_2: uuid.UUID
     ) -> dict[uuid.UUID, Account]:

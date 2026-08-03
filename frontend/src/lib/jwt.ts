@@ -1,6 +1,6 @@
 // Client-side JWT decoding is for UI routing decisions ONLY (which nav to
 // show, which route guard to apply). It is never trusted as an authorization
-// check — every protected backend endpoint re-validates the token's
+// check â€” every protected backend endpoint re-validates the token's
 // signature and claims independently. Do not add access-control logic here.
 interface AccessTokenClaims {
   sub: string;

@@ -77,7 +77,7 @@ class SMTPEmailProvider:
             )
         except Exception:
             notification_delivery_total.labels(channel="email", outcome="failure").inc()
-            logger.exception("email_delivery_failed", extra={"to_address": to_address})
+            logger.error("email_delivery_failed", extra={"to_address": to_address}, exc_info=True)
             raise
         notification_delivery_total.labels(channel="email", outcome="success").inc()
 

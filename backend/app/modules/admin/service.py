@@ -4,7 +4,8 @@ from datetime import date, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.background_tasks.tasks import send_notification_task, write_audit_log_task
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import AccountNotActiveError, CurrencyMismatchError, InsufficientBalanceError, NotFoundError
+from app.modules.accounts.cash_operations import AccountCashOperationRepository, CashOperationType
 from app.modules.accounts.models import Account, AccountStatus
 from app.modules.accounts.repository import AccountRepository, generate_account_number
 from app.modules.admin.schemas import (
@@ -31,6 +32,7 @@ class AdminService:
         self._session = session
         self._customers = CustomerRepository(session)
         self._accounts = AccountRepository(session)
+        self._cash_operations = AccountCashOperationRepository(session)
         self._cards = CardRepository(session)
         self._exchange_rates = ExchangeRateRepository(session)
         self._transactions = TransactionRepository(session)
@@ -118,6 +120,88 @@ class AdminService:
             str(account.id),
             None,
             {"from": previous_status.value, "to": payload.status.value},
+        )
+        return account
+
+    async def deposit_to_account(
+        self, admin_user: User, account_id: uuid.UUID, *, amount, currency: str, note: str | None
+    ) -> Account:
+        return await self._apply_cash_operation(
+            admin_user,
+            account_id,
+            amount=amount,
+            currency=currency,
+            note=note,
+            operation_type=CashOperationType.DEPOSIT,
+        )
+
+    async def withdraw_from_account(
+        self, admin_user: User, account_id: uuid.UUID, *, amount, currency: str, note: str | None
+    ) -> Account:
+        return await self._apply_cash_operation(
+            admin_user,
+            account_id,
+            amount=amount,
+            currency=currency,
+            note=note,
+            operation_type=CashOperationType.WITHDRAWAL,
+        )
+
+    async def _apply_cash_operation(
+        self,
+        admin_user: User,
+        account_id: uuid.UUID,
+        *,
+        amount,
+        currency: str,
+        note: str | None,
+        operation_type: CashOperationType,
+    ) -> Account:
+        account = await self._accounts.get_by_id_for_update(account_id)
+        if account is None:
+            raise NotFoundError("Account not found")
+        if account.status != AccountStatus.ACTIVE:
+            raise AccountNotActiveError(which="account")
+        if account.currency != currency:
+            raise CurrencyMismatchError(account.currency, currency)
+
+        balance_before = account.balance
+        if operation_type == CashOperationType.DEPOSIT:
+            account.balance = account.balance + amount
+            audit_action = "ADMIN_ACCOUNT_DEPOSITED"
+        else:
+            if account.balance < amount:
+                raise InsufficientBalanceError()
+            account.balance = account.balance - amount
+            audit_action = "ADMIN_ACCOUNT_WITHDRAWN"
+
+        account.version += 1
+        self._cash_operations.create(
+            account_id=account.id,
+            operation_type=operation_type,
+            amount=amount,
+            currency=account.currency,
+            balance_before=balance_before,
+            balance_after=account.balance,
+            performed_by_user_id=admin_user.id,
+            note=note,
+        )
+        await self._accounts.save(account)
+        await self._session.commit()
+        await self._session.refresh(account)
+
+        write_audit_log_task.delay(
+            str(admin_user.id),
+            audit_action,
+            "account",
+            str(account.id),
+            None,
+            {
+                "amount": str(amount),
+                "currency": account.currency,
+                "balance_before": str(balance_before),
+                "balance_after": str(account.balance),
+            },
         )
         return account
 

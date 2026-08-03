@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link } from "@/lib/router";
 
 import { useAccounts } from "@/hooks/useAccounts";
 import { formatAccountNumber, formatMoney } from "@/lib/format";

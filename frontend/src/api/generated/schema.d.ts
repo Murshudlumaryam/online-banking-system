@@ -1064,7 +1064,7 @@ export interface components {
         /**
          * LoginResponse
          * @description Shape returned by POST /auth/login. When the account has 2FA enabled,
-         *     the password check succeeding is not enough to issue real tokens — the
+         *     the password check succeeding is not enough to issue real tokens â€” the
          *     response instead carries a short-lived `challenge_token` that must be
          *     presented together with a TOTP code to POST /auth/2fa/verify-login.
          */
@@ -1365,7 +1365,7 @@ export interface components {
         };
         /**
          * UpdateCustomerProfileRequest
-         * @description Only phone_number and address are updatable by the customer — matches the
+         * @description Only phone_number and address are updatable by the customer â€” matches the
          *     TD's "Update allowed profile fields such as phone number and address".
          *     Identity fields (name, DOB, national ID, customer number) are immutable
          *     through this endpoint; changing them is an admin-only operation.

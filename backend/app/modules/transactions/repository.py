@@ -27,6 +27,12 @@ class TransactionRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_by_id_for_update(self, transaction_id: uuid.UUID) -> Transaction | None:
+        result = await self._session.execute(
+            select(Transaction).where(Transaction.id == transaction_id).with_for_update()
+        )
+        return result.scalar_one_or_none()
+
     async def get_by_reference_number(self, reference_number: str) -> Transaction | None:
         result = await self._session.execute(
             select(Transaction).where(Transaction.reference_number == reference_number)

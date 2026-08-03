@@ -1,5 +1,5 @@
 import { api } from "@/api/client";
-import type { RegisterResponse, TokenResponse } from "@/types/api";
+import type { RegisterResponse, SessionResponse, TokenResponse } from "@/types/api";
 
 export interface RegisterPayload {
   email: string;
@@ -27,8 +27,12 @@ export const authService = {
     return unwrap(api.POST("/api/v1/auth/login", { body: { email, password } }));
   },
 
-  async logout(refreshToken: string): Promise<void> {
-    await api.POST("/api/v1/auth/logout", { body: { refresh_token: refreshToken } });
+  async logout(): Promise<void> {
+    await api.POST("/api/v1/auth/logout", { body: {} } as never);
+  },
+
+  async getSession(): Promise<SessionResponse> {
+    return unwrap(api.GET("/api/v1/auth/session" as never, {} as never));
   },
 
   async changePassword(currentPassword: string, newPassword: string): Promise<void> {

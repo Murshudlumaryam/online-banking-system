@@ -11,19 +11,7 @@ from app.modules.transactions.models import TransactionStatus
 class TransferMoneyRequest(BaseModel):
     sender_account_id: uuid.UUID
     receiver_account_number: str = Field(min_length=5, max_length=34)
-    # Upper bound is defense-in-depth, not a real product limit: the
-    # `amount`/`converted_amount` DB columns are NUMERIC(18,2) (max
-    # ~9.99...e15), and without this the only thing standing between an
-    # absurd amount and a raw DB-level overflow error was the sender's
-    # balance check — fine for a normal balance, but currency conversion
-    # (amount * exchange_rate) could still overflow it even when the
-    # original amount was under the sender's balance. Found during a
-    # production-readiness audit; genuinely reachable (uncaught, surfaces as
-    # a generic 500 via the catch-all handler — no data corruption, no
-    # information leak, but a confusing error for something that should be
-    # a clean 422). A real product-level per-transfer limit belongs here
-    # too eventually; this is the safety ceiling, not that policy decision.
-    amount: Decimal = Field(gt=0, le=Decimal("1000000000"))
+    amount: Decimal = Field(gt=0)
     currency: str = Field(min_length=3, max_length=3)
 
     @field_validator("amount")

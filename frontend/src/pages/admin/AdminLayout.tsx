@@ -1,4 +1,4 @@
-import { Outlet, useLocation } from "react-router-dom";
+import { Outlet, useLocation } from "@/lib/router";
 
 import { AppShell, type NavItem } from "@/components/layout/AppShell";
 

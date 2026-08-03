@@ -146,17 +146,28 @@ export async function setAccountBalanceViaApi(
 }
 
 /**
- * Injects an already-obtained access/refresh token pair into the browser's
- * localStorage, matching lib/tokenStorage.ts's key names exactly. Lets tests
- * that only care about "a logged-in customer sees X" skip re-driving the
- * login form (which has its own dedicated coverage in auth.spec.ts).
+ * Injects an already-obtained access/refresh token pair as HttpOnly-style
+ * cookies. The app no longer stores bearer tokens in localStorage.
  */
 export async function injectSession(page: Page, accessToken: string, refreshToken: string): Promise<void> {
-  await page.addInitScript(
-    ([access, refresh]) => {
-      window.localStorage.setItem("banking.access_token", access);
-      window.localStorage.setItem("banking.refresh_token", refresh);
+  await page.context().addCookies([
+    {
+      name: "banking_access_token",
+      value: accessToken,
+      domain: "localhost",
+      path: "/api/v1",
+      httpOnly: true,
+      secure: false,
+      sameSite: "Lax",
     },
-    [accessToken, refreshToken],
-  );
+    {
+      name: "banking_refresh_token",
+      value: refreshToken,
+      domain: "localhost",
+      path: "/api/v1/auth",
+      httpOnly: true,
+      secure: false,
+      sameSite: "Lax",
+    },
+  ]);
 }

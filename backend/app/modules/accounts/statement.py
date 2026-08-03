@@ -15,6 +15,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from app.modules.accounts.models import Account
+from app.modules.accounts.cash_operations import AccountCashOperation, CashOperationType
 from app.modules.customers.models import Customer
 from app.modules.ledger_entries.models import LedgerEntry, LedgerEntryType
 
@@ -28,6 +29,7 @@ def generate_account_statement_pdf(
     account: Account,
     customer: Customer,
     entries: list[LedgerEntry],
+    cash_operations: list[AccountCashOperation] | None = None,
     start_date: date,
     end_date: date,
 ) -> bytes:
@@ -57,16 +59,30 @@ def generate_account_statement_pdf(
     story.append(Spacer(1, 16))
 
     table_data = [["Date", "Type", "Amount", "Balance after"]]
+    statement_rows: list[tuple[datetime, str, str, str]] = []
     for entry in entries:
         sign = "-" if entry.entry_type == LedgerEntryType.DEBIT else "+"
-        table_data.append(
-            [
-                entry.created_at.strftime("%Y-%m-%d %H:%M"),
+        statement_rows.append(
+            (
+                entry.created_at,
                 entry.entry_type.value,
                 f"{sign}{entry.amount:.2f} {entry.currency}",
                 f"{entry.balance_after:.2f} {entry.currency}",
-            ]
+            )
         )
+    for operation in cash_operations or []:
+        sign = "+" if operation.operation_type == CashOperationType.DEPOSIT else "-"
+        statement_rows.append(
+            (
+                operation.created_at,
+                operation.operation_type.value,
+                f"{sign}{operation.amount:.2f} {operation.currency}",
+                f"{operation.balance_after:.2f} {operation.currency}",
+            )
+        )
+
+    for created_at, row_type, amount, balance_after in sorted(statement_rows, key=lambda row: row[0]):
+        table_data.append([created_at.strftime("%Y-%m-%d %H:%M"), row_type, amount, balance_after])
 
     table = Table(table_data, colWidths=[100, 70, 140, 140], repeatRows=1)
     table.setStyle(
@@ -87,7 +103,7 @@ def generate_account_statement_pdf(
     )
     story.append(table)
 
-    if not entries:
+    if not statement_rows:
         story.append(Spacer(1, 12))
         story.append(Paragraph("No transactions in this period.", styles["Normal"]))
 

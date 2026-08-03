@@ -115,6 +115,76 @@ async def test_admin_create_account_for_nonexistent_customer_fails(
 
 
 @pytest.mark.asyncio
+async def test_admin_can_deposit_and_withdraw_cash(
+    client: AsyncClient, admin_headers: dict, db_session, registered_customer: dict
+):
+    from app.modules.accounts.models import AccountStatus
+    from app.modules.accounts.cash_operations import AccountCashOperationRepository
+    from datetime import datetime, timezone
+
+    customer = registered_customer["customer"]
+    accounts = AccountRepository(db_session)
+    account = accounts.create(
+        customer_id=customer.id, account_number="CASHOPS001", account_type="CHECKING", currency="AZN"
+    )
+    await db_session.flush()
+    account.status = AccountStatus.ACTIVE
+    await db_session.commit()
+
+    deposit_response = await client.post(
+        f"/api/v1/admin/accounts/{account.id}/deposit",
+        json={"amount": "125.50", "currency": "AZN", "note": "cash deposit"},
+        headers=admin_headers,
+    )
+    assert deposit_response.status_code == 200
+    assert deposit_response.json()["balance"] == "125.50"
+
+    withdraw_response = await client.post(
+        f"/api/v1/admin/accounts/{account.id}/withdraw",
+        json={"amount": "25.50", "currency": "AZN", "note": "cash withdrawal"},
+        headers=admin_headers,
+    )
+    assert withdraw_response.status_code == 200
+    assert withdraw_response.json()["balance"] == "100.00"
+
+    refreshed = await accounts.get_by_id(account.id)
+    assert refreshed.balance == 100
+
+    operations = await AccountCashOperationRepository(db_session).list_for_account(
+        account.id, start=account.created_at, end=datetime.now(timezone.utc)
+    )
+    assert [operation.operation_type.value for operation in operations] == ["DEPOSIT", "WITHDRAWAL"]
+
+
+@pytest.mark.asyncio
+async def test_admin_withdrawal_rejects_insufficient_balance(
+    client: AsyncClient, admin_headers: dict, db_session, registered_customer: dict
+):
+    from app.modules.accounts.models import AccountStatus
+
+    customer = registered_customer["customer"]
+    accounts = AccountRepository(db_session)
+    account = accounts.create(
+        customer_id=customer.id, account_number="CASHOPS002", account_type="CHECKING", currency="AZN"
+    )
+    await db_session.flush()
+    account.status = AccountStatus.ACTIVE
+    account.balance = 10
+    await db_session.commit()
+
+    response = await client.post(
+        f"/api/v1/admin/accounts/{account.id}/withdraw",
+        json={"amount": "11.00", "currency": "AZN"},
+        headers=admin_headers,
+    )
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "INSUFFICIENT_BALANCE"
+
+    refreshed = await accounts.get_by_id(account.id)
+    assert refreshed.balance == 10
+
+
+@pytest.mark.asyncio
 async def test_admin_can_issue_and_block_card(
     client: AsyncClient, admin_headers: dict, db_session, registered_customer: dict
 ):

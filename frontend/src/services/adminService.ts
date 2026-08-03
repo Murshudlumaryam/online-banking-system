@@ -25,6 +25,13 @@ export interface CreateCardPayload {
   validity_years?: number;
 }
 
+export interface CashOperationPayload {
+  accountId: string;
+  amount: string;
+  currency: string;
+  note?: string;
+}
+
 export interface CreateExchangeRatePayload {
   source_currency: string;
   target_currency: string;
@@ -83,6 +90,24 @@ export const adminService = {
         params: { path: { account_id: accountId } },
         body: { status },
       }),
+    );
+  },
+
+  async depositToAccount(payload: CashOperationPayload): Promise<AccountResponse> {
+    return unwrap(
+      api.POST("/api/v1/admin/accounts/{account_id}/deposit" as never, {
+        params: { path: { account_id: payload.accountId } },
+        body: { amount: payload.amount, currency: payload.currency, note: payload.note },
+      } as never),
+    );
+  },
+
+  async withdrawFromAccount(payload: CashOperationPayload): Promise<AccountResponse> {
+    return unwrap(
+      api.POST("/api/v1/admin/accounts/{account_id}/withdraw" as never, {
+        params: { path: { account_id: payload.accountId } },
+        body: { amount: payload.amount, currency: payload.currency, note: payload.note },
+      } as never),
     );
   },
 

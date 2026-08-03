@@ -22,7 +22,7 @@ export const accountsService = {
     );
   },
 
-  /** Returns a Blob (PDF) — statements aren't JSON, so this bypasses the typed unwrap helper. */
+  /** Returns a Blob (PDF) â€” statements aren't JSON, so this bypasses the typed unwrap helper. */
   async downloadStatement(accountId: string, startDate?: string, endDate?: string): Promise<Blob> {
     const { response } = await api.GET("/api/v1/accounts/{account_id}/statement", {
       params: {

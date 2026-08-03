@@ -1,6 +1,12 @@
 import { useState } from "react";
 
-import { useAdminAccounts, useCreateCard, useUpdateAccountStatus } from "@/hooks/useAdmin";
+import {
+  useAdminAccounts,
+  useCreateCard,
+  useDepositToAccount,
+  useUpdateAccountStatus,
+  useWithdrawFromAccount,
+} from "@/hooks/useAdmin";
 import { getApiErrorMessage } from "@/lib/apiClient";
 import { formatAccountNumber, formatMoney } from "@/lib/format";
 import type { AccountStatus } from "@/types/api";
@@ -18,7 +24,10 @@ export function AdminAccountsPage() {
   const { data, isLoading, isError, error } = useAdminAccounts(page, statusFilter || undefined);
   const updateStatus = useUpdateAccountStatus();
   const createCard = useCreateCard();
+  const deposit = useDepositToAccount();
+  const withdraw = useWithdrawFromAccount();
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [cashAmounts, setCashAmounts] = useState<Record<string, string>>({});
 
   async function handleIssueCard(accountId: string) {
     setFeedback(null);
@@ -27,6 +36,24 @@ export function AdminAccountsPage() {
       setFeedback(`Card ${card.masked_card_number} issued.`);
     } catch (err) {
       setFeedback(getApiErrorMessage(err, "Couldn't issue a card."));
+    }
+  }
+
+  async function handleCashOperation(accountId: string, currency: string, operation: "deposit" | "withdraw") {
+    const amount = cashAmounts[accountId]?.trim();
+    if (!amount) {
+      setFeedback("Enter an amount first.");
+      return;
+    }
+
+    setFeedback(null);
+    try {
+      const mutation = operation === "deposit" ? deposit : withdraw;
+      const account = await mutation.mutateAsync({ accountId, amount, currency });
+      setCashAmounts((current) => ({ ...current, [accountId]: "" }));
+      setFeedback(`${operation === "deposit" ? "Deposit" : "Withdrawal"} complete. New balance: ${formatMoney(account.balance, account.currency)}.`);
+    } catch (err) {
+      setFeedback(getApiErrorMessage(err, `Couldn't ${operation}.`));
     }
   }
 
@@ -70,8 +97,31 @@ export function AdminAccountsPage() {
                       {account.account_type} &middot; {formatMoney(account.balance, account.currency)}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center justify-end gap-2">
                     <Badge status={account.status}>{account.status}</Badge>
+                    <input
+                      className="h-8 w-28 rounded-md border border-slate-300 px-2 text-xs"
+                      inputMode="decimal"
+                      placeholder="Amount"
+                      value={cashAmounts[account.id] ?? ""}
+                      onChange={(e) => setCashAmounts((current) => ({ ...current, [account.id]: e.target.value }))}
+                    />
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => handleCashOperation(account.id, account.currency, "deposit")}
+                      isLoading={deposit.isPending}
+                    >
+                      Deposit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => handleCashOperation(account.id, account.currency, "withdraw")}
+                      isLoading={withdraw.isPending}
+                    >
+                      Withdraw
+                    </Button>
                     <select
                       className="rounded-md border border-slate-300 px-2 py-1 text-xs"
                       value={account.status}

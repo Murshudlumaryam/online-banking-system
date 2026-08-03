@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.background_tasks.tasks import send_notification_task
@@ -16,6 +16,7 @@ from app.modules.auth.schemas import (
     RefreshTokenRequest,
     RegisterCustomerRequest,
     RegisterResponse,
+    SessionResponse,
     SetupTwoFactorResponse,
     TokenResponse,
     VerifyMfaLoginRequest,
@@ -24,6 +25,42 @@ from app.modules.auth.service import AuthService
 from app.modules.users.models import User
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
+
+
+def _cookie_secure() -> bool:
+    from app.core.config import get_settings
+
+    return get_settings().is_production
+
+
+def _set_token_cookies(response: Response, tokens: TokenResponse) -> None:
+    secure = _cookie_secure()
+    response.set_cookie(
+        "banking_access_token",
+        tokens.access_token,
+        max_age=tokens.expires_in,
+        httponly=True,
+        secure=secure,
+        samesite="lax",
+        path="/api/v1",
+    )
+    response.set_cookie(
+        "banking_refresh_token",
+        tokens.refresh_token,
+        max_age=60 * 60 * 24 * 7,
+        httponly=True,
+        secure=secure,
+        samesite="lax",
+        path="/api/v1/auth",
+    )
+
+
+def _clear_token_cookies(response: Response) -> None:
+    for name, path in (
+        ("banking_access_token", "/api/v1"),
+        ("banking_refresh_token", "/api/v1/auth"),
+    ):
+        response.delete_cookie(name, path=path, httponly=True, secure=_cookie_secure(), samesite="lax")
 
 
 @router.post(
@@ -50,29 +87,58 @@ async def register(
 async def login(
     payload: LoginRequest,
     request: Request,
+    response: Response,
     session: AsyncSession = Depends(get_db),
 ) -> LoginResponse:
     service = AuthService(session)
-    return await service.login(payload, ip_address=get_client_ip(request))
+    result = await service.login(payload, ip_address=get_client_ip(request))
+    if result.access_token and result.refresh_token and result.expires_in:
+        _set_token_cookies(
+            response,
+            TokenResponse(
+                access_token=result.access_token,
+                refresh_token=result.refresh_token,
+                expires_in=result.expires_in,
+            ),
+        )
+    return result
 
 
 @router.post("/refresh", response_model=TokenResponse, summary="Rotate an access/refresh token pair")
 async def refresh_token(
     payload: RefreshTokenRequest,
     request: Request,
+    response: Response,
     session: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
     service = AuthService(session)
-    return await service.refresh(payload.refresh_token, ip_address=get_client_ip(request))
+    raw_refresh_token = payload.refresh_token or request.cookies.get("banking_refresh_token")
+    if not raw_refresh_token:
+        from app.core.exceptions import InvalidRefreshTokenError
+
+        raise InvalidRefreshTokenError()
+    tokens = await service.refresh(raw_refresh_token, ip_address=get_client_ip(request))
+    _set_token_cookies(response, tokens)
+    return tokens
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, summary="Revoke a refresh token")
 async def logout(
     payload: LogoutRequest,
+    request: Request,
+    response: Response,
     session: AsyncSession = Depends(get_db),
 ) -> None:
     service = AuthService(session)
-    await service.logout(payload.refresh_token)
+    raw_refresh_token = payload.refresh_token or request.cookies.get("banking_refresh_token")
+    if raw_refresh_token:
+        await service.logout(raw_refresh_token)
+    _clear_token_cookies(response)
+
+
+@router.get("/session", response_model=SessionResponse, summary="Return the current authenticated session")
+async def get_session(current_user: User = Depends(get_current_user)) -> SessionResponse:
+    return SessionResponse(id=current_user.id, email=current_user.email, role=current_user.role.value)
 
 
 @router.post(
@@ -170,12 +236,15 @@ async def disable_two_factor(
 async def verify_mfa_login(
     payload: VerifyMfaLoginRequest,
     request: Request,
+    response: Response,
     session: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
     service = AuthService(session)
-    return await service.verify_mfa_login(
+    tokens = await service.verify_mfa_login(
         payload.challenge_token, payload.code, ip_address=get_client_ip(request)
     )
+    _set_token_cookies(response, tokens)
+    return tokens
 
 
 @router.post(

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "@/lib/router";
 
 import { authService } from "@/services/authService";
 import { AuthLayout } from "@/components/layout/AuthLayout";
@@ -18,7 +18,7 @@ export function ForgotPasswordPage() {
     try {
       await authService.requestPasswordReset(email);
     } finally {
-      // Always show the same confirmation, whether or not the email exists —
+      // Always show the same confirmation, whether or not the email exists â€”
       // matches the backend's no-user-enumeration guarantee.
       setIsSubmitting(false);
       setSubmitted(true);

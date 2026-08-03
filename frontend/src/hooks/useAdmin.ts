@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   adminService,
   type AuditLogFilters,
+  type CashOperationPayload,
   type CreateAccountPayload,
   type CreateCardPayload,
   type CreateExchangeRatePayload,
@@ -53,6 +54,22 @@ export function useUpdateAccountStatus() {
   return useMutation({
     mutationFn: ({ accountId, status }: { accountId: string; status: AccountStatus }) =>
       adminService.updateAccountStatus(accountId, status),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["admin", "accounts"] }),
+  });
+}
+
+export function useDepositToAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CashOperationPayload) => adminService.depositToAccount(payload),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["admin", "accounts"] }),
+  });
+}
+
+export function useWithdrawFromAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CashOperationPayload) => adminService.withdrawFromAccount(payload),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["admin", "accounts"] }),
   });
 }

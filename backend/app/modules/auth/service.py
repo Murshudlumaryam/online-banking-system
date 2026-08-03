@@ -1,6 +1,5 @@
 import uuid
 
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.background_tasks.tasks import write_audit_log_task
@@ -70,39 +69,19 @@ class AuthService:
         if payload.national_id and await self._customers.national_id_exists(payload.national_id):
             raise ConflictError("A customer with this national ID already exists")
 
-        try:
-            user = self._users.create(email=payload.email, password_hash=hash_password(payload.password))
-            await self._session.flush()  # assign user.id before creating the dependent customer
+        user = self._users.create(email=payload.email, password_hash=hash_password(payload.password))
+        await self._session.flush()  # assign user.id before creating the dependent customer
 
-            self._customers.create(
-                user_id=user.id,
-                first_name=payload.first_name,
-                last_name=payload.last_name,
-                date_of_birth=payload.date_of_birth,
-                phone_number=payload.phone_number,
-                address=payload.address,
-                national_id=payload.national_id,
-            )
-            await self._session.commit()
-        except IntegrityError as exc:
-            # The email_exists()/national_id_exists() checks above are a
-            # plain SELECT before this INSERT — a genuine TOCTOU race if two
-            # requests with the same email (or national_id) commit at
-            # nearly the same instant. The DB's UNIQUE constraints are the
-            # real guarantee (data integrity holds either way — only one
-            # row ever exists), but without this except block the loser saw
-            # a raw, unhandled IntegrityError (a generic 500) instead of the
-            # correct 409. Found via a concurrent-registration audit test
-            # (tests/modules/auth/test_audit_registration_race.py).
-            #
-            # Note this must wrap the EARLIER flush() too, not just the
-            # final commit() — the actual INSERT (and thus the constraint
-            # check) happens at that flush, needed to obtain `user.id`
-            # before the dependent customer row can reference it.
-            await self._session.rollback()
-            raise ConflictError(
-                "This email or national ID is already registered"
-            ) from exc
+        self._customers.create(
+            user_id=user.id,
+            first_name=payload.first_name,
+            last_name=payload.last_name,
+            date_of_birth=payload.date_of_birth,
+            phone_number=payload.phone_number,
+            address=payload.address,
+            national_id=payload.national_id,
+        )
+        await self._session.commit()
         await self._session.refresh(user)
 
         write_audit_log_task.delay(str(user.id), "CUSTOMER_REGISTERED", "user", str(user.id), ip_address, None)

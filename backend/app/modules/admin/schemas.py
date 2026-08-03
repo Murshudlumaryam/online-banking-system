@@ -26,6 +26,25 @@ class UpdateAccountStatusRequest(BaseModel):
     status: AccountStatus
 
 
+class CashOperationRequest(BaseModel):
+    amount: Decimal = Field(gt=0)
+    currency: str = Field(min_length=3, max_length=3)
+    note: str | None = Field(default=None, max_length=255)
+
+    @field_validator("amount")
+    @classmethod
+    def amount_max_two_decimal_places(cls, value: Decimal) -> Decimal:
+        exponent = value.as_tuple().exponent
+        if isinstance(exponent, int) and exponent < -2:
+            raise ValueError("amount must have at most 2 decimal places")
+        return value
+
+    @field_validator("currency")
+    @classmethod
+    def operation_currency_uppercase(cls, value: str) -> str:
+        return value.upper()
+
+
 class CreateCardRequest(BaseModel):
     account_id: uuid.UUID
     card_type: str = Field(default="DEBIT", pattern="^(DEBIT|CREDIT)$")

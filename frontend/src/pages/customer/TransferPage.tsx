@@ -13,7 +13,7 @@ import { Select } from "@/components/ui/Select";
 import { Card, ErrorBanner, Spinner } from "@/components/ui/Feedback";
 import { OtpConfirmModal } from "@/components/modals/OtpConfirmModal";
 
-// Error codes that mean the transaction itself is no longer confirmable —
+// Error codes that mean the transaction itself is no longer confirmable â€”
 // the modal should close and the person should start a fresh transfer,
 // rather than retry the same OTP.
 const TERMINAL_CONFIRM_ERRORS = new Set(["OTP_EXPIRED", "TOO_MANY_OTP_ATTEMPTS", "TRANSACTION_ALREADY_PROCESSED"]);

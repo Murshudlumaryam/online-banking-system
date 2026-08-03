@@ -1,24 +1,19 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios";
 
 import type { ApiErrorBody, TokenResponse } from "@/types/api";
-import { tokenStorage } from "@/lib/tokenStorage";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
-export const apiClient = axios.create({ baseURL: BASE_URL });
+export const apiClient = axios.create({ baseURL: BASE_URL, withCredentials: true });
 
 // Registered by AuthProvider so the interceptor can trigger a clean logout +
-// redirect without importing React Router into a plain module.
+// redirect without importing the SPA router into a plain module.
 let onSessionExpired: (() => void) | null = null;
 export function registerSessionExpiredHandler(handler: () => void): void {
   onSessionExpired = handler;
 }
 
 apiClient.interceptors.request.use((config) => {
-  const token = tokenStorage.getAccessToken();
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
   return config;
 });
 
@@ -29,15 +24,8 @@ apiClient.interceptors.request.use((config) => {
 let refreshPromise: Promise<string> | null = null;
 
 export async function refreshAccessToken(): Promise<string> {
-  const refreshToken = tokenStorage.getRefreshToken();
-  if (!refreshToken) {
-    throw new Error("No refresh token available");
-  }
-  const response = await axios.post<TokenResponse>(`${BASE_URL}/auth/refresh`, {
-    refresh_token: refreshToken,
-  });
-  tokenStorage.setTokens(response.data.access_token, response.data.refresh_token);
-  return response.data.access_token;
+  await axios.post<TokenResponse>(`${BASE_URL}/auth/refresh`, {}, { withCredentials: true });
+  return "cookie";
 }
 
 interface RetryableConfig extends InternalAxiosRequestConfig {
@@ -57,11 +45,9 @@ apiClient.interceptors.response.use(
         refreshPromise ??= refreshAccessToken().finally(() => {
           refreshPromise = null;
         });
-        const newAccessToken = await refreshPromise;
-        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+        await refreshPromise;
         return apiClient(originalRequest);
       } catch {
-        tokenStorage.clear();
         onSessionExpired?.();
       }
     }

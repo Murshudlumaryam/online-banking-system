@@ -37,11 +37,11 @@ class LoginRequest(BaseModel):
 
 
 class RefreshTokenRequest(BaseModel):
-    refresh_token: str
+    refresh_token: str | None = None
 
 
 class LogoutRequest(BaseModel):
-    refresh_token: str
+    refresh_token: str | None = None
 
 
 class PasswordChangeRequest(BaseModel):
@@ -72,6 +72,12 @@ class TokenResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int
+
+
+class SessionResponse(BaseModel):
+    id: uuid.UUID
+    email: str
+    role: str
 
 
 class LoginResponse(BaseModel):

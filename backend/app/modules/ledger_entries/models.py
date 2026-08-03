@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKey,
     Numeric,
     String,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -30,7 +31,15 @@ class LedgerEntry(UUIDPrimaryKeyMixin, Base):
     """
 
     __tablename__ = "ledger_entries"
-    __table_args__ = (CheckConstraint("amount > 0", name="ck_ledger_entries_amount_positive"),)
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_ledger_entries_amount_positive"),
+        UniqueConstraint(
+            "transaction_id",
+            "account_id",
+            "entry_type",
+            name="uq_ledger_entries_transaction_account_type",
+        ),
+    )
 
     transaction_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("transactions.id", ondelete="RESTRICT"), nullable=False, index=True

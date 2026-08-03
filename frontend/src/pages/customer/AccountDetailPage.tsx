@@ -1,4 +1,4 @@
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams } from "@/lib/router";
 
 import { useAccount } from "@/hooks/useAccounts";
 import { formatAccountNumber, formatMoney } from "@/lib/format";

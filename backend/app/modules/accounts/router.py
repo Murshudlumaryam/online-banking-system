@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.modules.accounts.dependencies import get_owned_account
+from app.modules.accounts.cash_operations import AccountCashOperationRepository
 from app.modules.accounts.models import Account
 from app.modules.accounts.repository import AccountRepository
 from app.modules.accounts.schemas import AccountBalanceResponse, AccountResponse
@@ -64,10 +65,14 @@ async def get_account_statement(
     entries = await LedgerEntryRepository(session).list_for_account(
         account.id, start=start_datetime, end=end_datetime
     )
+    cash_operations = await AccountCashOperationRepository(session).list_for_account(
+        account.id, start=start_datetime, end=end_datetime
+    )
     pdf_bytes = generate_account_statement_pdf(
         account=account,
         customer=customer,
         entries=entries,
+        cash_operations=cash_operations,
         start_date=resolved_start_date,
         end_date=resolved_end_date,
     )

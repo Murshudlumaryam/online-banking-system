@@ -7,7 +7,7 @@ export function formatMoney(amount: string | number, currency: string): string {
       currencyDisplay: "narrowSymbol",
     }).format(value);
   } catch {
-    // Unknown/synthetic currency code — fall back to a plain numeric format.
+    // Unknown/synthetic currency code â€” fall back to a plain numeric format.
     return `${value.toFixed(2)} ${currency}`;
   }
 }

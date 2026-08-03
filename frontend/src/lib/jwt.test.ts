@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { decodeAccessToken, isTokenExpired } from "@/lib/jwt";
 
-// Minimal helper to build a fake (unsigned) JWT for testing the decoder —
+// Minimal helper to build a fake (unsigned) JWT for testing the decoder â€”
 // the frontend never verifies signatures, so this is representative enough.
 function fakeJwt(payload: Record<string, unknown>): string {
   const base64url = (obj: Record<string, unknown>) =>

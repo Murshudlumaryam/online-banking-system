@@ -10,10 +10,7 @@ from app.modules.scheduled_payments.models import PaymentFrequency
 class CreateScheduledPaymentRequest(BaseModel):
     sender_account_id: uuid.UUID
     receiver_account_number: str = Field(min_length=5, max_length=34)
-    # Same defense-in-depth ceiling as TransferMoneyRequest — see that
-    # class's comment. A scheduled payment executes via the same
-    # NUMERIC(18,2)-backed transfer path.
-    amount: Decimal = Field(gt=0, le=Decimal("1000000000"))
+    amount: Decimal = Field(gt=0)
     currency: str = Field(min_length=3, max_length=3)
     frequency: PaymentFrequency
     start_at: datetime | None = Field(

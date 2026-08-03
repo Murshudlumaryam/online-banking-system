@@ -1,4 +1,4 @@
-import { useParams } from "react-router-dom";
+import { useParams } from "@/lib/router";
 
 import { useTransaction } from "@/hooks/useTransactions";
 import { formatDateTime, formatMoney } from "@/lib/format";
@@ -35,7 +35,7 @@ export function TransactionDetailPage() {
           <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Ledger</p>
           {txn.ledger_entries.length === 0 ? (
             <p className="mt-2 text-sm text-slate-500">
-              No ledger entries yet — this transaction hasn&apos;t completed.
+              No ledger entries yet â€” this transaction hasn&apos;t completed.
             </p>
           ) : (
             <ul className="mt-2">

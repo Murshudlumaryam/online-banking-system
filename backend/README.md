@@ -170,7 +170,7 @@ nəzərdən keçiriləcək.
 
 ## Faza 5 (Frontend)
 
-React + Vite + TypeScript + React Router + React Query + TailwindCSS —
+React + Vite + TypeScript + internal SPA router + React Query + TailwindCSS —
 tam müştəri və admin UI-si. Ətraflı: `frontend/README.md` (dizayn sistemi,
 autentifikasiya axını, test nəticələri, məlum məhdudiyyətlər).
 
@@ -457,3 +457,45 @@ Bütün planlaşdırılan fazalar (1-9) tamamlandı. Mümkün gələcək istiqam
 real Vault/AWS Secrets Manager inteqrasiyası (real kimlik məlumatları ilə),
 OpenTelemetry tracing, Alertmanager qaydaları, real PCI/pentest prosesi,
 VM-də faktiki ilk `docker compose up` icrasının izlənilməsi.
+
+## Phase 10 - Audit Blocker Fixes
+
+This phase addresses the production-readiness blockers found in the final audit:
+
+- Transaction race condition fixed: `TransactionService.confirm_transfer` now locks the transaction row with `SELECT ... FOR UPDATE` before moving money and re-checks `PENDING` while locked. Two concurrent OTP confirmations for the same transaction can no longer execute the same transfer twice.
+- Atomic confirmation: the inner success-path commit was removed. OTP verification, transaction status, account balances, and ledger entries are persisted in one database commit.
+- Ledger duplicate protection: `ledger_entries` now has `uq_ledger_entries_transaction_account_type`, added by migration `0007_ledger_entry_uniqueness`.
+- Regression coverage: the concurrency test now seeds sender balance with `2 * amount`, so a real double-execution bug would be caught even when the account has enough money for two debits. It also asserts exactly two ledger rows.
+- Deposit/withdrawal: admin-only `POST /api/v1/admin/accounts/{id}/deposit` and `POST /api/v1/admin/accounts/{id}/withdraw` were added. Both lock the account row, validate account status/currency/balance, and write an `account_cash_operations` audit row with `balance_before` and `balance_after`. Migration: `0008_account_cash_operations`.
+- Account statements: generated PDF statements now include both ledger transfer entries and admin cash deposit/withdrawal operations.
+- Refresh token storage hardening: login/MFA/refresh now set access and refresh tokens as HttpOnly cookies. The frontend no longer stores refresh tokens in `localStorage`; session bootstrap uses `GET /api/v1/auth/session`. Bearer token support remains for API and e2e compatibility.
+- Docker hygiene: obsolete Compose `version` keys were removed and backend/frontend `.dockerignore` files were added.
+
+### Phase 10 Verification Status
+
+Verified in this environment:
+
+```bash
+cd frontend
+npm run build
+npm run lint
+npm test -- --run
+npm audit
+
+cd ..
+python -m compileall -q backend/app backend/tests
+docker compose -f docker-compose.yml config --quiet
+docker compose -f docker-compose.prod.yml config --quiet
+```
+
+Results: frontend build/lint/tests passed, `npm audit` reported 0 vulnerabilities, backend compile passed, and both Compose configs are syntactically valid.
+
+Docker build/run and Playwright e2e could not be physically completed on this machine because Docker Desktop cannot start (`Docker Desktop is unable to start`, missing `dockerDesktopLinuxEngine` pipe). Run these on a Docker-enabled VM/runner:
+
+```bash
+docker compose -f docker-compose.prod.yml build backend frontend
+docker compose --profile test up -d test_db redis
+docker compose exec backend alembic upgrade head
+docker compose exec -e TEST_DATABASE_URL=postgresql+asyncpg://banking_user:banking_pass@test_db:5432/banking_test_db backend pytest -v
+cd frontend && npx playwright test
+```

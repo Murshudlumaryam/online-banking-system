@@ -1,5 +1,5 @@
 // Mirrors the backend Pydantic schemas (see backend/app/modules/*/schemas.py).
-// Keeping these in sync manually is a deliberate Phase 5 tradeoff — an
+// Keeping these in sync manually is a deliberate Phase 5 tradeoff â€” an
 // OpenAPI-generated client is a good Phase 6 hardening candidate.
 
 export type UserRole = "ADMIN" | "CUSTOMER";
@@ -21,6 +21,12 @@ export interface TokenResponse {
   refresh_token: string;
   token_type: string;
   expires_in: number;
+}
+
+export interface SessionResponse {
+  id: string;
+  email: string;
+  role: UserRole;
 }
 
 export interface CustomerSummary {

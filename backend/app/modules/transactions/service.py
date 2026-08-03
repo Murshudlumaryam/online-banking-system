@@ -229,27 +229,33 @@ class TransactionService:
         TransactionAlreadyProcessedError is raised instead.
         """
         try:
+            locked_transaction = await self._transactions.get_by_id_for_update(transaction.id)
+            if locked_transaction is None:
+                raise NotFoundError("Transaction not found")
+            if locked_transaction.status != TransactionStatus.PENDING:
+                raise TransactionAlreadyProcessedError()
+
             locked_accounts = await self._accounts.get_two_for_update(
-                transaction.sender_account_id, transaction.receiver_account_id
+                locked_transaction.sender_account_id, locked_transaction.receiver_account_id
             )
-            sender = locked_accounts[transaction.sender_account_id]
-            receiver = locked_accounts[transaction.receiver_account_id]
+            sender = locked_accounts[locked_transaction.sender_account_id]
+            receiver = locked_accounts[locked_transaction.receiver_account_id]
 
             if sender.status != AccountStatus.ACTIVE:
                 raise AccountNotActiveError(which="sender account")
             if receiver.status != AccountStatus.ACTIVE:
                 raise AccountNotActiveError(which="receiver account")
-            if sender.balance < transaction.amount:
+            if sender.balance < locked_transaction.amount:
                 raise InsufficientBalanceError()
 
             credit_amount = (
-                transaction.converted_amount
-                if transaction.converted_amount is not None
-                else transaction.amount
+                locked_transaction.converted_amount
+                if locked_transaction.converted_amount is not None
+                else locked_transaction.amount
             )
 
             sender_balance_before = sender.balance
-            sender.balance = sender.balance - transaction.amount
+            sender.balance = sender.balance - locked_transaction.amount
             sender.version += 1
 
             receiver_balance_before = receiver.balance
@@ -257,16 +263,16 @@ class TransactionService:
             receiver.version += 1
 
             self._ledger_entries.create(
-                transaction_id=transaction.id,
+                transaction_id=locked_transaction.id,
                 account_id=sender.id,
                 entry_type=LedgerEntryType.DEBIT,
-                amount=transaction.amount,
+                amount=locked_transaction.amount,
                 currency=sender.currency,
                 balance_before=sender_balance_before,
                 balance_after=sender.balance,
             )
             self._ledger_entries.create(
-                transaction_id=transaction.id,
+                transaction_id=locked_transaction.id,
                 account_id=receiver.id,
                 entry_type=LedgerEntryType.CREDIT,
                 amount=credit_amount,
@@ -275,28 +281,16 @@ class TransactionService:
                 balance_after=receiver.balance,
             )
 
-            await self._transactions.mark_success(transaction)
-            await self._session.commit()
+            await self._transactions.mark_success(locked_transaction)
             from app.core.metrics import transfers_total
 
             transfers_total.labels(outcome="success").inc()
-            return transaction
+            return locked_transaction
+        except TransactionAlreadyProcessedError:
+            raise
         except DomainError as exc:
-            # Capture the id as a plain value BEFORE rollback — after
-            # `rollback()`, every ORM object tied to this session (including
-            # `transaction`) is expired by default, and accessing even a
-            # simple attribute like `transaction.id` afterward triggers an
-            # implicit lazy-reload. In async SQLAlchemy that reload must be
-            # awaited explicitly; a bare attribute access can't do that and
-            # raises `MissingGreenlet` — which would abort this except block
-            # entirely, skipping `mark_failed` and leaving the loser's
-            # transaction stuck at PENDING instead of FAILED. Found via a
-            # real concurrent-load test (two separate transfers racing for
-            # the same sender account) — see
-            # tests/modules/transactions/test_audit_concurrency.py.
-            transaction_id = transaction.id
             await self._session.rollback()
-            reloaded_transaction = await self._transactions.get_by_id(transaction_id)
+            reloaded_transaction = await self._transactions.get_by_id(transaction.id)
             assert reloaded_transaction is not None, "transaction disappeared mid-execution"
             if reloaded_transaction.status == TransactionStatus.PENDING:
                 # Still ours to fail — no concurrent request resolved it first.

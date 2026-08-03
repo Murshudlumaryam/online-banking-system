@@ -21,14 +21,19 @@ def get_client_ip(request: Request) -> str | None:
 
 
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
     session: AsyncSession = Depends(get_db),
 ) -> User:
     if credentials is None:
-        raise UnauthorizedError("Missing bearer token")
+        token = request.cookies.get("banking_access_token")
+        if not token:
+            raise UnauthorizedError("Missing bearer token")
+    else:
+        token = credentials.credentials
 
     try:
-        payload = decode_access_token(credentials.credentials)
+        payload = decode_access_token(token)
     except InvalidTokenError as exc:
         raise UnauthorizedError(str(exc)) from exc
 

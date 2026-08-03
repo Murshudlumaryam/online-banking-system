@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { useParams } from "react-router-dom";
+import { useParams } from "@/lib/router";
 
 import { useAdminCustomer, useCreateAccount, useUpdateCustomerStatus } from "@/hooks/useAdmin";
 import { getApiErrorMessage } from "@/lib/apiClient";
@@ -68,7 +68,7 @@ export function AdminCustomerDetailPage() {
           </div>
           <div className="col-span-2">
             <dt className="text-slate-500">Address</dt>
-            <dd className="text-ink">{customer.address ?? "—"}</dd>
+            <dd className="text-ink">{customer.address ?? "â€”"}</dd>
           </div>
         </dl>
 

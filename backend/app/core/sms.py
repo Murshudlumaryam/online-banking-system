@@ -82,7 +82,7 @@ class TwilioSMSProvider:
                 )
         except Exception:
             notification_delivery_total.labels(channel="sms", outcome="failure").inc()
-            logger.exception("sms_delivery_failed", extra={"to_number": to_number})
+            logger.error("sms_delivery_failed", extra={"to_number": to_number}, exc_info=True)
             raise
         notification_delivery_total.labels(channel="sms", outcome="success").inc()
 

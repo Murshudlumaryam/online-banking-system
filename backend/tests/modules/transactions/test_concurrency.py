@@ -66,7 +66,7 @@ async def test_concurrent_confirm_cannot_double_spend():
         )
         await setup_session.flush()
         sender.status = AccountStatus.ACTIVE
-        sender.balance = 100
+        sender.balance = 200
         receiver.status = AccountStatus.ACTIVE
         receiver.balance = 0
 
@@ -121,12 +121,17 @@ async def test_concurrent_confirm_cannot_double_spend():
             accounts = AccountRepository(verify_session)
             final_sender = await accounts.get_by_id(sender_id)
             final_receiver = await accounts.get_by_id(receiver_id)
-            assert final_sender.balance == 0
+            assert final_sender.balance == 100
             assert final_receiver.balance == 100
 
             transactions = TransactionRepository(verify_session)
             final_transaction = await transactions.get_by_id(transaction_id)
             assert final_transaction.status == TransactionStatus.SUCCESS
+
+            from app.modules.ledger_entries.repository import LedgerEntryRepository
+
+            ledger_entries = await LedgerEntryRepository(verify_session).list_for_transaction(transaction_id)
+            assert len(ledger_entries) == 2
     finally:
         # --- Manual cleanup since this test bypassed the rollback fixture ---
         async with session_factory() as cleanup_session:
