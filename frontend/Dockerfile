@@ -1,5 +1,5 @@
 # ---- Development image (used by docker-compose for hot-reload) ----
-FROM node:20-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 
@@ -17,7 +17,7 @@ CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
 # ---------------------------------------------------------------------------
 # Production build note (not used by docker-compose, kept here for later):
 #
-# FROM node:20-alpine AS build
+# FROM node:22-alpine AS build
 # WORKDIR /app
 # COPY package.json package-lock.json* ./
 # RUN npm install
