@@ -27,6 +27,39 @@ class TransactionRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_for_update(self, transaction_id: uuid.UUID) -> Transaction | None:
+        """
+        Locks the transaction row itself with SELECT ... FOR UPDATE. This is
+        the actual fix for the double-confirmation race condition: without
+        it, two concurrent confirm attempts for the *same* transaction each
+        independently pass the (unlocked) PENDING check, then both proceed
+        to lock and debit the accounts — if the sender's balance happens to
+        cover the debit twice, both succeed, producing duplicate ledger
+        entries and a double-debited/double-credited balance. Locking the
+        transaction row first means the second caller blocks here until the
+        first commits, then re-reads a fresh (no longer PENDING) status and
+        stops before ever touching the accounts.
+
+        `populate_existing=True` is required, not optional: the caller's
+        session already has this row in its identity map from the earlier
+        unlocked read in `_get_owned_pending_transaction` (same session,
+        same object). Without this flag, SQLAlchemy's default identity-map
+        behavior returns that *same* Python object without refreshing its
+        attributes — so even though the SQL-level lock correctly serializes
+        and waits, `.status` on the returned object can still read the
+        stale PENDING value from before the wait, silently defeating the
+        whole point of re-checking under lock. Found via a direct
+        reproduction test — see
+        tests/modules/transactions/test_double_confirmation_vulnerability.py.
+        """
+        result = await self._session.execute(
+            select(Transaction)
+            .where(Transaction.id == transaction_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return result.scalar_one_or_none()
+
     async def get_by_reference_number(self, reference_number: str) -> Transaction | None:
         result = await self._session.execute(
             select(Transaction).where(Transaction.reference_number == reference_number)

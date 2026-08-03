@@ -1,0 +1,25 @@
+# --- Secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Node ---
+node_modules/
+dist/
+dist-ssr/
+*.tsbuildinfo
+coverage/
+
+# --- Playwright ---
+playwright-report/
+test-results/
+e2e/
+
+# --- Version control / editor / OS ---
+.git/
+.gitignore
+.vscode/
+.idea/
+.DS_Store
+
+README.md

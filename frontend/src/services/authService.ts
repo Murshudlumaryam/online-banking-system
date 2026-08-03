@@ -27,8 +27,12 @@ export const authService = {
     return unwrap(api.POST("/api/v1/auth/login", { body: { email, password } }));
   },
 
-  async logout(refreshToken: string): Promise<void> {
-    await api.POST("/api/v1/auth/logout", { body: { refresh_token: refreshToken } });
+  async logout(): Promise<void> {
+    // No body — the refresh token to revoke is read from the HttpOnly
+    // cookie server-side (see backend/app/modules/auth/router.py). The
+    // `api` client's `credentials: "include"` setting (api/client.ts) is
+    // what makes the browser attach that cookie to this request.
+    await api.POST("/api/v1/auth/logout", {});
   },
 
   async changePassword(currentPassword: string, newPassword: string): Promise<void> {

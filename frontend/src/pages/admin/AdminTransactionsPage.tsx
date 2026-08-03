@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 import { useAdminTransactions } from "@/hooks/useAdmin";
 import { getApiErrorMessage } from "@/lib/apiClient";

@@ -17,10 +17,22 @@ export interface ApiErrorBody {
 }
 
 export interface TokenResponse {
+  // The refresh token is never in the response body — it travels only as
+  // an HttpOnly, Secure, SameSite=Strict cookie the browser manages
+  // automatically (see backend/app/modules/auth/cookies.py). JavaScript
+  // never sees it, so it can't be exfiltrated by an XSS payload the way a
+  // localStorage-held token could be.
   access_token: string;
-  refresh_token: string;
   token_type: string;
   expires_in: number;
+}
+
+export interface LoginResponse {
+  mfa_required: boolean;
+  challenge_token: string | null;
+  access_token: string | null;
+  token_type: string;
+  expires_in: number | null;
 }
 
 export interface CustomerSummary {

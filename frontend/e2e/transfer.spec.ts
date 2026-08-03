@@ -32,7 +32,7 @@ test.describe("Money transfer", () => {
     await setAccountBalanceViaApi(request, adminSession.accessToken, senderAccount.id, "500.00");
 
     // --- The actual UI-driven part: sign in as the sender and send money. ---
-    await injectSession(page, senderSession.accessToken, senderSession.refreshToken);
+    await injectSession(page, senderSession.refreshToken);
     await page.goto("/app/transfer");
 
     await page.getByLabel("From account").selectOption(senderAccount.id);
@@ -87,7 +87,7 @@ test.describe("Money transfer", () => {
     );
     await setAccountBalanceViaApi(request, adminSession.accessToken, senderAccount.id, "200.00");
 
-    await injectSession(page, senderSession.accessToken, senderSession.refreshToken);
+    await injectSession(page, senderSession.refreshToken);
     await page.goto("/app/transfer");
 
     await page.getByLabel("From account").selectOption(senderAccount.id);
@@ -125,7 +125,7 @@ test.describe("Money transfer", () => {
     );
     await setAccountBalanceViaApi(request, adminSession.accessToken, senderAccount.id, "5.00");
 
-    await injectSession(page, senderSession.accessToken, senderSession.refreshToken);
+    await injectSession(page, senderSession.refreshToken);
     await page.goto("/app/transfer");
 
     await page.getByLabel("From account").selectOption(senderAccount.id);

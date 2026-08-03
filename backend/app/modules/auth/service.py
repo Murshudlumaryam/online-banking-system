@@ -111,7 +111,16 @@ class AuthService:
     # ------------------------------------------------------------------
     # Login
     # ------------------------------------------------------------------
-    async def login(self, payload: LoginRequest, *, ip_address: str | None) -> LoginResponse:
+    async def login(
+        self, payload: LoginRequest, *, ip_address: str | None
+    ) -> tuple[LoginResponse, TokenResponse | None]:
+        """
+        Returns (response_body, raw_tokens). `raw_tokens` is None for the
+        MFA-challenge branch (nothing issued yet) and populated on a normal
+        successful login — the router uses it to set the refresh-token
+        cookie, while `response_body` (never containing the raw refresh
+        token) is what actually goes back as JSON.
+        """
         user = await self._users.get_by_email(payload.email)
 
         if user is None or not verify_password(payload.password, user.password_hash):
@@ -129,14 +138,14 @@ class AuthService:
                 str(user.id), "LOGIN_PASSWORD_OK_AWAITING_MFA", "user", str(user.id), ip_address, None
             )
             challenge_token = create_mfa_challenge_token(user_id=user.id)
-            return LoginResponse.mfa_challenge(challenge_token)
+            return LoginResponse.mfa_challenge(challenge_token), None
 
         await self._users.mark_login(user)
         tokens, _ = await self._issue_token_pair(user)
         await self._session.commit()
 
         write_audit_log_task.delay(str(user.id), "LOGIN_SUCCESS", "user", str(user.id), ip_address, None)
-        return LoginResponse.from_tokens(tokens)
+        return LoginResponse.from_tokens(tokens), tokens
 
     # ------------------------------------------------------------------
     # Two-factor authentication (Phase 7; encrypted at rest since Phase 9)

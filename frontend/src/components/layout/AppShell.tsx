@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router";
 
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/Button";

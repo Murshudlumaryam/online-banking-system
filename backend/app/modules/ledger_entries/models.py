@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKey,
     Numeric,
     String,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -30,7 +31,15 @@ class LedgerEntry(UUIDPrimaryKeyMixin, Base):
     """
 
     __tablename__ = "ledger_entries"
-    __table_args__ = (CheckConstraint("amount > 0", name="ck_ledger_entries_amount_positive"),)
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_ledger_entries_amount_positive"),
+        # Defense-in-depth against the exact double-confirmation bug fixed in
+        # app/modules/transactions/service.py: even if application-level
+        # locking were ever bypassed or regressed, a single transaction can
+        # never have more than one DEBIT or more than one CREDIT row — the
+        # database itself refuses a duplicate.
+        UniqueConstraint("transaction_id", "entry_type", name="uq_ledger_entries_transaction_entry_type"),
+    )
 
     transaction_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("transactions.id", ondelete="RESTRICT"), nullable=False, index=True

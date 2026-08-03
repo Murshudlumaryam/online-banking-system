@@ -27,7 +27,7 @@ async def test_login_without_2fa_returns_tokens_directly(client: AsyncClient, un
     tokens = await _register_and_login(client, unique_email)
     assert tokens["mfa_required"] is False
     assert tokens["access_token"]
-    assert tokens["refresh_token"]
+    assert "refresh_token" not in tokens
 
 
 @pytest.mark.asyncio
@@ -66,7 +66,8 @@ async def test_full_2fa_enrollment_and_login_flow(client: AsyncClient, unique_em
     assert verify_response.status_code == 200
     final_tokens = verify_response.json()
     assert final_tokens["access_token"]
-    assert final_tokens["refresh_token"]
+    assert "refresh_token" not in final_tokens
+    assert verify_response.cookies.get("refresh_token")
 
 
 @pytest.mark.asyncio

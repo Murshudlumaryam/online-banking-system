@@ -1,0 +1,33 @@
+# --- Secrets — never let these end up baked into an image layer ---
+.env
+.env.*
+!.env.example
+!.env.production.example
+*.pem
+*.key
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.egg-info/
+.venv/
+venv/
+
+# --- Version control / editor / OS ---
+.git/
+.gitignore
+.vscode/
+.idea/
+.DS_Store
+
+# Note: tests/ is deliberately NOT excluded — `docker compose exec backend
+# pytest` (see backend/README.md) runs the suite inside the running
+# container, so it needs to actually be present in the image.
+README.md

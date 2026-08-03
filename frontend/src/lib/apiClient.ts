@@ -1,11 +1,15 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios";
 
+import { accessTokenStore } from "@/lib/accessTokenStore";
 import type { ApiErrorBody, TokenResponse } from "@/types/api";
-import { tokenStorage } from "@/lib/tokenStorage";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
-export const apiClient = axios.create({ baseURL: BASE_URL });
+// `withCredentials: true` is required so the browser attaches the
+// HttpOnly refresh_token cookie to requests (and stores it from the
+// Set-Cookie header on login/refresh responses) — without it, this client
+// would never see the cookie at all, regardless of the backend setting it.
+export const apiClient = axios.create({ baseURL: BASE_URL, withCredentials: true });
 
 // Registered by AuthProvider so the interceptor can trigger a clean logout +
 // redirect without importing React Router into a plain module.
@@ -15,7 +19,7 @@ export function registerSessionExpiredHandler(handler: () => void): void {
 }
 
 apiClient.interceptors.request.use((config) => {
-  const token = tokenStorage.getAccessToken();
+  const token = accessTokenStore.get();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -29,14 +33,15 @@ apiClient.interceptors.request.use((config) => {
 let refreshPromise: Promise<string> | null = null;
 
 export async function refreshAccessToken(): Promise<string> {
-  const refreshToken = tokenStorage.getRefreshToken();
-  if (!refreshToken) {
-    throw new Error("No refresh token available");
-  }
-  const response = await axios.post<TokenResponse>(`${BASE_URL}/auth/refresh`, {
-    refresh_token: refreshToken,
-  });
-  tokenStorage.setTokens(response.data.access_token, response.data.refresh_token);
+  // No request body — the refresh token is the HttpOnly cookie the browser
+  // attaches automatically (see the `withCredentials: true` note above).
+  // JavaScript never reads or sends its value directly.
+  const response = await axios.post<TokenResponse>(
+    `${BASE_URL}/auth/refresh`,
+    undefined,
+    { withCredentials: true },
+  );
+  accessTokenStore.set(response.data.access_token);
   return response.data.access_token;
 }
 
@@ -61,7 +66,7 @@ apiClient.interceptors.response.use(
         originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
         return apiClient(originalRequest);
       } catch {
-        tokenStorage.clear();
+        accessTokenStore.clear();
         onSessionExpired?.();
       }
     }

@@ -71,9 +71,7 @@ async def test_password_change_revokes_existing_refresh_tokens(
         headers=headers,
     )
 
-    refresh_response = await client.post(
-        "/api/v1/auth/refresh", json={"refresh_token": tokens["refresh_token"]}
-    )
+    refresh_response = await client.post("/api/v1/auth/refresh")
     assert refresh_response.status_code == 401
 
 

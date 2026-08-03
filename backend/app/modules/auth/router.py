@@ -1,23 +1,27 @@
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.background_tasks.tasks import send_notification_task
+from app.core.exceptions import UnauthorizedError
 from app.db.session import get_db
+from app.modules.auth.cookies import (
+    clear_refresh_token_cookie,
+    read_refresh_token_cookie,
+    set_refresh_token_cookie,
+)
 from app.modules.auth.dependencies import get_client_ip, get_current_user
 from app.modules.auth.schemas import (
+    AccessTokenResponse,
     DisableTwoFactorRequest,
     EnableTwoFactorRequest,
     LoginRequest,
     LoginResponse,
-    LogoutRequest,
     PasswordChangeRequest,
     PasswordResetConfirmRequest,
     PasswordResetRequest,
-    RefreshTokenRequest,
     RegisterCustomerRequest,
     RegisterResponse,
     SetupTwoFactorResponse,
-    TokenResponse,
     VerifyMfaLoginRequest,
 )
 from app.modules.auth.service import AuthService
@@ -50,29 +54,43 @@ async def register(
 async def login(
     payload: LoginRequest,
     request: Request,
+    response: Response,
     session: AsyncSession = Depends(get_db),
 ) -> LoginResponse:
     service = AuthService(session)
-    return await service.login(payload, ip_address=get_client_ip(request))
+    login_response, raw_tokens = await service.login(payload, ip_address=get_client_ip(request))
+    if raw_tokens is not None:
+        set_refresh_token_cookie(response, raw_tokens.refresh_token)
+    return login_response
 
 
-@router.post("/refresh", response_model=TokenResponse, summary="Rotate an access/refresh token pair")
+@router.post("/refresh", response_model=AccessTokenResponse, summary="Rotate an access/refresh token pair")
 async def refresh_token(
-    payload: RefreshTokenRequest,
     request: Request,
+    response: Response,
     session: AsyncSession = Depends(get_db),
-) -> TokenResponse:
+) -> AccessTokenResponse:
+    raw_refresh_token = read_refresh_token_cookie(request)
+    if raw_refresh_token is None:
+        raise UnauthorizedError("No refresh token cookie present")
+
     service = AuthService(session)
-    return await service.refresh(payload.refresh_token, ip_address=get_client_ip(request))
+    tokens = await service.refresh(raw_refresh_token, ip_address=get_client_ip(request))
+    set_refresh_token_cookie(response, tokens.refresh_token)
+    return AccessTokenResponse.from_tokens(tokens)
 
 
-@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, summary="Revoke a refresh token")
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, summary="Revoke the current refresh token")
 async def logout(
-    payload: LogoutRequest,
+    request: Request,
+    response: Response,
     session: AsyncSession = Depends(get_db),
 ) -> None:
-    service = AuthService(session)
-    await service.logout(payload.refresh_token)
+    raw_refresh_token = read_refresh_token_cookie(request)
+    if raw_refresh_token is not None:
+        service = AuthService(session)
+        await service.logout(raw_refresh_token)
+    clear_refresh_token_cookie(response)
 
 
 @router.post(
@@ -164,18 +182,21 @@ async def disable_two_factor(
 
 @router.post(
     "/2fa/verify-login",
-    response_model=TokenResponse,
+    response_model=AccessTokenResponse,
     summary="Complete a login that returned an MFA challenge",
 )
 async def verify_mfa_login(
     payload: VerifyMfaLoginRequest,
     request: Request,
+    response: Response,
     session: AsyncSession = Depends(get_db),
-) -> TokenResponse:
+) -> AccessTokenResponse:
     service = AuthService(session)
-    return await service.verify_mfa_login(
+    tokens = await service.verify_mfa_login(
         payload.challenge_token, payload.code, ip_address=get_client_ip(request)
     )
+    set_refresh_token_cookie(response, tokens.refresh_token)
+    return AccessTokenResponse.from_tokens(tokens)
 
 
 @router.post(

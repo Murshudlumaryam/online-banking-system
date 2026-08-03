@@ -36,14 +36,6 @@ class LoginRequest(BaseModel):
     password: str
 
 
-class RefreshTokenRequest(BaseModel):
-    refresh_token: str
-
-
-class LogoutRequest(BaseModel):
-    refresh_token: str
-
-
 class PasswordChangeRequest(BaseModel):
     current_password: str
     new_password: str = Field(min_length=8, max_length=128)
@@ -68,10 +60,35 @@ class PasswordResetConfirmRequest(BaseModel):
 
 
 class TokenResponse(BaseModel):
+    """
+    Internal shape used between AuthService and the router — carries the raw
+    refresh token so the router can put it in an HttpOnly cookie. Never
+    returned to the client as JSON; see AccessTokenResponse for that.
+    """
+
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int
+
+
+class AccessTokenResponse(BaseModel):
+    """
+    What actually goes in the JSON response body for login/refresh/2FA
+    verify. Deliberately has no `refresh_token` field — that value is set as
+    an HttpOnly, Secure, SameSite=Strict cookie instead (see
+    app/modules/auth/router.py's cookie helpers) so it's never readable by
+    JavaScript and therefore never exposed to an XSS payload the way a
+    localStorage-held token would be.
+    """
+
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+
+    @classmethod
+    def from_tokens(cls, tokens: TokenResponse) -> "AccessTokenResponse":
+        return cls(access_token=tokens.access_token, expires_in=tokens.expires_in)
 
 
 class LoginResponse(BaseModel):
@@ -80,12 +97,14 @@ class LoginResponse(BaseModel):
     the password check succeeding is not enough to issue real tokens — the
     response instead carries a short-lived `challenge_token` that must be
     presented together with a TOTP code to POST /auth/2fa/verify-login.
+
+    No `refresh_token` field here either, for the same reason as
+    AccessTokenResponse — it travels only as an HttpOnly cookie.
     """
 
     mfa_required: bool = False
     challenge_token: str | None = None
     access_token: str | None = None
-    refresh_token: str | None = None
     token_type: str = "bearer"
     expires_in: int | None = None
 
@@ -94,7 +113,6 @@ class LoginResponse(BaseModel):
         return cls(
             mfa_required=False,
             access_token=tokens.access_token,
-            refresh_token=tokens.refresh_token,
             expires_in=tokens.expires_in,
         )
 

@@ -64,7 +64,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Revoke a refresh token */
+        /** Revoke the current refresh token */
         post: operations["logout_api_v1_auth_logout_post"];
         delete?: never;
         options?: never;
@@ -728,6 +728,26 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AccessTokenResponse
+         * @description What actually goes in the JSON response body for login/refresh/2FA
+         *     verify. Deliberately has no `refresh_token` field — that value is set as
+         *     an HttpOnly, Secure, SameSite=Strict cookie instead (see
+         *     app/modules/auth/router.py's cookie helpers) so it's never readable by
+         *     JavaScript and therefore never exposed to an XSS payload the way a
+         *     localStorage-held token would be.
+         */
+        AccessTokenResponse: {
+            /** Access Token */
+            access_token: string;
+            /**
+             * Token Type
+             * @default bearer
+             */
+            token_type: string;
+            /** Expires In */
+            expires_in: number;
+        };
         /** AccountBalanceResponse */
         AccountBalanceResponse: {
             /**
@@ -1067,6 +1087,9 @@ export interface components {
          *     the password check succeeding is not enough to issue real tokens — the
          *     response instead carries a short-lived `challenge_token` that must be
          *     presented together with a TOTP code to POST /auth/2fa/verify-login.
+         *
+         *     No `refresh_token` field here either, for the same reason as
+         *     AccessTokenResponse — it travels only as an HttpOnly cookie.
          */
         LoginResponse: {
             /**
@@ -1078,8 +1101,6 @@ export interface components {
             challenge_token?: string | null;
             /** Access Token */
             access_token?: string | null;
-            /** Refresh Token */
-            refresh_token?: string | null;
             /**
              * Token Type
              * @default bearer
@@ -1087,11 +1108,6 @@ export interface components {
             token_type: string;
             /** Expires In */
             expires_in?: number | null;
-        };
-        /** LogoutRequest */
-        LogoutRequest: {
-            /** Refresh Token */
-            refresh_token: string;
         };
         /** PaginatedResponse[AccountResponse] */
         PaginatedResponse_AccountResponse_: {
@@ -1164,11 +1180,6 @@ export interface components {
          * @enum {string}
          */
         PaymentFrequency: "DAILY" | "WEEKLY" | "MONTHLY";
-        /** RefreshTokenRequest */
-        RefreshTokenRequest: {
-            /** Refresh Token */
-            refresh_token: string;
-        };
         /** RegisterCustomerRequest */
         RegisterCustomerRequest: {
             /**
@@ -1244,20 +1255,6 @@ export interface components {
             secret: string;
             /** Provisioning Uri */
             provisioning_uri: string;
-        };
-        /** TokenResponse */
-        TokenResponse: {
-            /** Access Token */
-            access_token: string;
-            /** Refresh Token */
-            refresh_token: string;
-            /**
-             * Token Type
-             * @default bearer
-             */
-            token_type: string;
-            /** Expires In */
-            expires_in: number;
         };
         /** TransactionDetailResponse */
         TransactionDetailResponse: {
@@ -1482,11 +1479,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RefreshTokenRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -1494,16 +1487,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TokenResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["AccessTokenResponse"];
                 };
             };
         };
@@ -1515,11 +1499,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LogoutRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             204: {
@@ -1527,15 +1507,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
             };
         };
     };
@@ -1733,7 +1704,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TokenResponse"];
+                    "application/json": components["schemas"]["AccessTokenResponse"];
                 };
             };
             /** @description Validation Error */

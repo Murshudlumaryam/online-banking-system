@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { useParams } from "react-router-dom";
+import { useParams } from "react-router";
 
 import { useAdminCustomer, useCreateAccount, useUpdateCustomerStatus } from "@/hooks/useAdmin";
 import { getApiErrorMessage } from "@/lib/apiClient";

@@ -20,7 +20,7 @@ def _register_payload(email: str) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_login_with_correct_credentials_returns_token_pair(
+async def test_login_with_correct_credentials_returns_access_token_and_refresh_cookie(
     client: AsyncClient, unique_email: str
 ):
     await client.post("/api/v1/auth/register", json=_register_payload(unique_email))
@@ -32,8 +32,22 @@ async def test_login_with_correct_credentials_returns_token_pair(
     assert response.status_code == 200
     body = response.json()
     assert body["access_token"]
-    assert body["refresh_token"]
     assert body["token_type"] == "bearer"
+    # The refresh token must never appear in the JSON body — only as an
+    # HttpOnly cookie (see app/modules/auth/cookies.py). A response body
+    # leaking it would defeat the entire point of moving it out of
+    # localStorage-reachable JavaScript.
+    assert "refresh_token" not in body
+
+    refresh_cookie = response.cookies.get("refresh_token")
+    assert refresh_cookie, "expected a refresh_token cookie to be set on login"
+
+    # httpx's Cookies object doesn't expose Set-Cookie attributes (httponly/
+    # secure/samesite) directly — assert on the raw Set-Cookie header instead.
+    set_cookie_header = response.headers.get("set-cookie", "")
+    assert "httponly" in set_cookie_header.lower()
+    assert "samesite=strict" in set_cookie_header.lower()
+    assert "path=/api/v1/auth" in set_cookie_header.lower()
 
 
 @pytest.mark.asyncio

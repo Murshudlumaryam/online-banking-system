@@ -1,4 +1,4 @@
-import { useParams } from "react-router-dom";
+import { useParams } from "react-router";
 
 import { useAdminTransaction } from "@/hooks/useAdmin";
 import { getApiErrorMessage } from "@/lib/apiClient";

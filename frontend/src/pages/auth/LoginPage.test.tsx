@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider } from "@/context/AuthContext";
@@ -60,7 +60,6 @@ describe("LoginPage", () => {
     vi.mocked(authService.login).mockResolvedValueOnce({
       mfa_required: false,
       access_token: "a",
-      refresh_token: "b",
       token_type: "bearer",
       expires_in: 900,
     });

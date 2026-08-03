@@ -31,10 +31,25 @@ class AccountRepository:
         between the same two accounts will always attempt to acquire locks
         in the same order, so one waits for the other instead of both
         deadlocking.
+
+        `populate_existing=True` is required: the calling session typically
+        already read the sender account unlocked earlier in the same
+        request (`_customer_owns_transaction`'s ownership check), so it's
+        already in the session's identity map. Without this flag,
+        SQLAlchemy returns that cached Python object as-is rather than
+        refreshing it from this locked read — meaning `.balance` can still
+        show the pre-lock value even though the SQL-level lock correctly
+        waited for a concurrent transfer to finish. Verified directly with
+        a same-session before/after-lock read test — see
+        tests/modules/accounts/test_lock_freshness.py.
         """
         ordered_ids = sorted([account_id_1, account_id_2], key=str)
         result = await self._session.execute(
-            select(Account).where(Account.id.in_(ordered_ids)).order_by(Account.id).with_for_update()
+            select(Account)
+            .where(Account.id.in_(ordered_ids))
+            .order_by(Account.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         accounts = {account.id: account for account in result.scalars().all()}
         return accounts

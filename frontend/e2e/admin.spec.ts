@@ -14,7 +14,7 @@ test.describe("Admin panel", () => {
     await promoteToAdminViaApi(request, adminSession.accessToken);
     await registerAndLoginViaApi(request, someCustomer);
 
-    await injectSession(page, adminSession.accessToken, adminSession.refreshToken);
+    await injectSession(page, adminSession.refreshToken);
     await page.goto("/admin/customers");
 
     await expect(page).toHaveURL(/\/admin\/customers/);
@@ -25,7 +25,7 @@ test.describe("Admin panel", () => {
     const customer = makeTestUser("e2e_non_admin");
     const session = await registerAndLoginViaApi(request, customer);
 
-    await injectSession(page, session.accessToken, session.refreshToken);
+    await injectSession(page, session.refreshToken);
     await page.goto("/admin/customers");
 
     await expect(page).toHaveURL(/\/app\/dashboard/);
@@ -36,7 +36,7 @@ test.describe("Admin panel", () => {
     const adminSession = await registerAndLoginViaApi(request, adminUser);
     await promoteToAdminViaApi(request, adminSession.accessToken);
 
-    await injectSession(page, adminSession.accessToken, adminSession.refreshToken);
+    await injectSession(page, adminSession.refreshToken);
     await page.goto("/admin/customers");
 
     await page.getByLabel("Filter by status").selectOption("BLOCKED");

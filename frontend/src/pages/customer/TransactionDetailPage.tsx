@@ -1,4 +1,4 @@
-import { useParams } from "react-router-dom";
+import { useParams } from "react-router";
 
 import { useTransaction } from "@/hooks/useTransactions";
 import { formatDateTime, formatMoney } from "@/lib/format";

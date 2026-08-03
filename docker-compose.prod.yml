@@ -9,8 +9,6 @@
 #
 # Usage: see DEPLOYMENT.md. Bring the whole stack up with:
 #   docker compose -f docker-compose.prod.yml up -d --build
-version: "3.9"
-
 services:
   db:
     image: postgres:16-alpine
@@ -63,6 +61,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     networks:
       - banking_network
 
@@ -84,6 +84,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     command: celery -A app.background_tasks.celery_app worker --loglevel=info --concurrency=2
     networks:
       - banking_network
@@ -106,18 +108,22 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     command: celery -A app.background_tasks.celery_app beat --loglevel=info
     networks:
       - banking_network
 
-  # One-off migration runner — see DEPLOYMENT.md. Not restarted; it exits
-  # once migrations are applied. Run explicitly with:
-  #   docker compose -f docker-compose.prod.yml run --rm migrate
+  # Runs automatically before backend/celery start — no more manual
+  # `docker compose run --rm migrate` step to forget. `alembic upgrade
+  # head` is idempotent, so this is safe to run on every `up` including
+  # restarts where the schema is already current.
   migrate:
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
     image: online-banking-backend:latest
+    container_name: banking_migrate
     env_file:
       - .env
     environment:
@@ -128,7 +134,6 @@ services:
     command: alembic upgrade head
     networks:
       - banking_network
-    profiles: ["tools"]
 
   frontend:
     build:

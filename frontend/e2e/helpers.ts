@@ -27,6 +27,14 @@ export function makeTestUser(prefix: string): TestUser {
  * the UI registration/login flow itself is covered by its own dedicated
  * spec, so other specs that need "a logged-in customer" as a precondition
  * shouldn't re-drive that UI every time).
+ *
+ * The refresh token is extracted directly from this response's Set-Cookie
+ * header rather than left to accumulate in `request`'s shared cookie jar —
+ * a test that logs in multiple users through the same `request` fixture
+ * (sender, receiver, admin) would otherwise have each login's Set-Cookie
+ * silently overwrite the previous one in that shared jar, so by the time a
+ * later `injectSession` call ran, the jar would hold the *last* logged-in
+ * user's cookie rather than the specific one the test asked for.
  */
 export async function registerAndLoginViaApi(
   request: APIRequestContext,
@@ -54,11 +62,27 @@ export async function registerAndLoginViaApi(
     throw new Error(`Login failed: ${loginResponse.status()} ${await loginResponse.text()}`);
   }
   const loginBody = await loginResponse.json();
+  const refreshToken = extractCookieValue(loginResponse.headersArray(), "refresh_token");
+  if (!refreshToken) {
+    throw new Error("Login response did not set a refresh_token cookie");
+  }
   return {
     accessToken: loginBody.access_token,
-    refreshToken: loginBody.refresh_token,
+    refreshToken,
     customerId: registerBody.customer.id,
   };
+}
+
+/** Pulls a single cookie's value out of a response's raw (possibly
+ * multi-valued) Set-Cookie headers — Playwright's APIResponse doesn't
+ * expose parsed cookies the way a browser Page/Context does. */
+function extractCookieValue(headers: { name: string; value: string }[], cookieName: string): string | null {
+  for (const header of headers) {
+    if (header.name.toLowerCase() !== "set-cookie") continue;
+    const match = header.value.match(new RegExp(`^${cookieName}=([^;]+)`));
+    if (match) return match[1];
+  }
+  return null;
 }
 
 /**
@@ -146,17 +170,31 @@ export async function setAccountBalanceViaApi(
 }
 
 /**
- * Injects an already-obtained access/refresh token pair into the browser's
- * localStorage, matching lib/tokenStorage.ts's key names exactly. Lets tests
- * that only care about "a logged-in customer sees X" skip re-driving the
- * login form (which has its own dedicated coverage in auth.spec.ts).
+ * Establishes a logged-in session in the browser `page` from tokens already
+ * obtained via `registerAndLoginViaApi`, without driving the login form
+ * (which has its own dedicated coverage in auth.spec.ts).
+ *
+ * The access token is memory-only in this app now (see
+ * lib/accessTokenStore.ts) — there is nothing to inject for it, and no
+ * localStorage key it would even go in. AuthContext always re-establishes
+ * it itself on mount via a cookie-authenticated POST /auth/refresh (see
+ * AuthContext.tsx's bootstrap effect). So the only thing this function
+ * needs to seed is that refresh_token cookie — added directly to the
+ * browser context via `addCookies`, which (unlike `page.evaluate`/
+ * `addInitScript`) can set an HttpOnly cookie the way a real Set-Cookie
+ * response would, since it operates at the browser-automation level rather
+ * than through in-page JavaScript.
  */
-export async function injectSession(page: Page, accessToken: string, refreshToken: string): Promise<void> {
-  await page.addInitScript(
-    ([access, refresh]) => {
-      window.localStorage.setItem("banking.access_token", access);
-      window.localStorage.setItem("banking.refresh_token", refresh);
+export async function injectSession(page: Page, refreshToken: string): Promise<void> {
+  await page.context().addCookies([
+    {
+      name: "refresh_token",
+      value: refreshToken,
+      domain: "localhost",
+      path: "/api/v1/auth",
+      httpOnly: true,
+      secure: false, // matches cookies.py's `secure=settings.is_production`; these tests run ENVIRONMENT=test
+      sameSite: "Strict",
     },
-    [accessToken, refreshToken],
-  );
+  ]);
 }

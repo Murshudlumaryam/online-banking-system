@@ -2,9 +2,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from "react";
 
 import { registerApiSessionExpiredHandler } from "@/api/client";
+import { accessTokenStore } from "@/lib/accessTokenStore";
 import { registerSessionExpiredHandler, refreshAccessToken } from "@/lib/apiClient";
-import { decodeAccessToken, isTokenExpired } from "@/lib/jwt";
-import { tokenStorage } from "@/lib/tokenStorage";
+import { decodeAccessToken } from "@/lib/jwt";
 import { authService, type RegisterPayload } from "@/services/authService";
 import type { UserRole } from "@/types/api";
 
@@ -32,14 +32,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<SessionStatus>("loading");
   const [role, setRole] = useState<UserRole | null>(null);
 
-  const applyTokens = useCallback((accessToken: string) => {
+  const applyAccessToken = useCallback((accessToken: string) => {
+    accessTokenStore.set(accessToken);
     const claims = decodeAccessToken(accessToken);
     setRole(claims?.role ?? null);
     setStatus("authenticated");
   }, []);
 
   const clearSession = useCallback(() => {
-    tokenStorage.clear();
+    accessTokenStore.clear();
     setRole(null);
     setStatus("unauthenticated");
   }, []);
@@ -53,31 +54,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     registerApiSessionExpiredHandler(clearSession);
   }, [clearSession]);
 
-  // On first load, resume a session from a persisted refresh token if the
-  // access token has expired since the last visit.
+  // On first load there is no access token to check — it's memory-only and
+  // never survives a reload (see lib/accessTokenStore.ts). The only way to
+  // know if the visitor has a live session is to ask the backend: a silent
+  // POST /auth/refresh, authenticated purely by the HttpOnly refresh_token
+  // cookie the browser sends automatically. Success re-establishes the
+  // session with a fresh access token; failure (no cookie, or an
+  // expired/revoked one) means logged-out, same as a first-time visitor.
   useEffect(() => {
     async function bootstrap() {
-      const accessToken = tokenStorage.getAccessToken();
-      const claims = accessToken ? decodeAccessToken(accessToken) : null;
-
-      if (accessToken && claims && !isTokenExpired(claims)) {
-        applyTokens(accessToken);
-        return;
+      try {
+        const newAccessToken = await refreshAccessToken();
+        applyAccessToken(newAccessToken);
+      } catch {
+        clearSession();
       }
-
-      if (tokenStorage.getRefreshToken()) {
-        try {
-          const newAccessToken = await refreshAccessToken();
-          applyTokens(newAccessToken);
-          return;
-        } catch {
-          // Refresh token was invalid/expired/reused — fall through to logged-out.
-        }
-      }
-      clearSession();
     }
     void bootstrap();
-  }, [applyTokens, clearSession]);
+  }, [applyAccessToken, clearSession]);
 
   const login = useCallback(
     async (email: string, password: string) => {
@@ -85,22 +79,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (result.mfa_required && result.challenge_token) {
         return { mfaRequired: true as const, challengeToken: result.challenge_token };
       }
-      if (result.access_token && result.refresh_token) {
-        tokenStorage.setTokens(result.access_token, result.refresh_token);
-        applyTokens(result.access_token);
+      if (result.access_token) {
+        // The refresh_token cookie was already set by the browser from this
+        // same response's Set-Cookie header (axios's withCredentials: true
+        // in lib/apiClient.ts / api/client.ts's credentials: "include" is
+        // what makes that happen) — nothing to do with it here.
+        applyAccessToken(result.access_token);
       }
       return { mfaRequired: false as const };
     },
-    [applyTokens],
+    [applyAccessToken],
   );
 
   const completeMfaLogin = useCallback(
     async (challengeToken: string, code: string) => {
       const tokens = await authService.verifyMfaLogin(challengeToken, code);
-      tokenStorage.setTokens(tokens.access_token, tokens.refresh_token);
-      applyTokens(tokens.access_token);
+      applyAccessToken(tokens.access_token);
     },
-    [applyTokens],
+    [applyAccessToken],
   );
 
   const register = useCallback(async (payload: RegisterPayload) => {
@@ -108,13 +104,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    const refreshToken = tokenStorage.getRefreshToken();
-    if (refreshToken) {
-      try {
-        await authService.logout(refreshToken);
-      } catch {
-        // Best-effort — proceed to clear the local session regardless.
-      }
+    try {
+      // No token to pass — the backend reads the refresh_token cookie
+      // itself and clears it on response.
+      await authService.logout();
+    } catch {
+      // Best-effort — proceed to clear the local session regardless.
     }
     clearSession();
   }, [clearSession]);

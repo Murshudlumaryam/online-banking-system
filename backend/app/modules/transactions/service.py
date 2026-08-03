@@ -24,7 +24,7 @@ from app.modules.customers.models import Customer
 from app.modules.exchange_rates.repository import ExchangeRateRepository
 from app.modules.ledger_entries.models import LedgerEntryType
 from app.modules.ledger_entries.repository import LedgerEntryRepository
-from app.modules.transactions.models import Transaction, TransactionStatus
+from app.modules.transactions.models import Transaction, TransactionStatus, TransferConfirmation
 from app.modules.transactions.repository import (
     TransactionRepository,
     TransferConfirmationRepository,
@@ -196,10 +196,7 @@ class TransactionService:
             transfers_total.labels(outcome="otp_invalid").inc()
             raise InvalidOtpError(attempts_remaining)
 
-        transaction = await self._execute_locked_transfer(transaction)
-        transaction.otp_verified = True
-        await self._confirmations.mark_verified(confirmation)
-        await self._session.commit()
+        transaction = await self._execute_locked_transfer(transaction, confirmation=confirmation)
 
         write_audit_log_task.delay(
             str(customer.user_id),
@@ -217,39 +214,59 @@ class TransactionService:
         )
         return transaction
 
-    async def _execute_locked_transfer(self, transaction: Transaction) -> Transaction:
+    async def _execute_locked_transfer(
+        self, transaction: Transaction, *, confirmation: TransferConfirmation | None = None
+    ) -> Transaction:
         """
-        Atomically locks both accounts (ordered by id to prevent deadlocks),
-        moves the money, and writes balanced ledger entries. On any
-        domain-rule violation discovered under lock (account state changed
-        since the transaction row was created), rolls back and marks the
-        transaction FAILED — unless a concurrent request already resolved
-        it, in which case that outcome is preserved rather than overwritten
-        (see the race-condition fix in Phase 3's README write-up) and
-        TransactionAlreadyProcessedError is raised instead.
+        Atomically locks the transaction row itself first (re-checking its
+        status under that lock — see TransactionRepository.get_for_update's
+        docstring for why this is the actual fix for the double-confirmation
+        race), then locks both accounts (ordered by id to prevent
+        deadlocks), moves the money, and writes balanced ledger entries.
+
+        `confirmation` is optional: interactive OTP transfers pass their
+        TransferConfirmation so it gets marked verified in the SAME commit
+        as the balance/ledger changes (no separate trailing commit — either
+        the whole confirmation succeeds together, or none of it does).
+        Scheduled/recurring payments have no OTP step and pass nothing.
+
+        On any domain-rule violation discovered under lock (account state
+        changed since the transaction row was created, or the transaction
+        was already resolved by a concurrent request), rolls back and marks
+        the transaction FAILED — unless a concurrent request already
+        resolved it, in which case that outcome is preserved rather than
+        overwritten, and TransactionAlreadyProcessedError is raised instead.
         """
         try:
+            locked_transaction = await self._transactions.get_for_update(transaction.id)
+            if locked_transaction is None:
+                raise NotFoundError("Transaction not found")
+            if locked_transaction.status != TransactionStatus.PENDING:
+                # Another request already resolved this transaction while we
+                # were waiting for the lock — never re-process or overwrite it.
+                raise TransactionAlreadyProcessedError()
+
             locked_accounts = await self._accounts.get_two_for_update(
-                transaction.sender_account_id, transaction.receiver_account_id
+                locked_transaction.sender_account_id, locked_transaction.receiver_account_id
             )
-            sender = locked_accounts[transaction.sender_account_id]
-            receiver = locked_accounts[transaction.receiver_account_id]
+            sender = locked_accounts[locked_transaction.sender_account_id]
+            receiver = locked_accounts[locked_transaction.receiver_account_id]
 
             if sender.status != AccountStatus.ACTIVE:
                 raise AccountNotActiveError(which="sender account")
             if receiver.status != AccountStatus.ACTIVE:
                 raise AccountNotActiveError(which="receiver account")
-            if sender.balance < transaction.amount:
+            if sender.balance < locked_transaction.amount:
                 raise InsufficientBalanceError()
 
             credit_amount = (
-                transaction.converted_amount
-                if transaction.converted_amount is not None
-                else transaction.amount
+                locked_transaction.converted_amount
+                if locked_transaction.converted_amount is not None
+                else locked_transaction.amount
             )
 
             sender_balance_before = sender.balance
-            sender.balance = sender.balance - transaction.amount
+            sender.balance = sender.balance - locked_transaction.amount
             sender.version += 1
 
             receiver_balance_before = receiver.balance
@@ -257,16 +274,16 @@ class TransactionService:
             receiver.version += 1
 
             self._ledger_entries.create(
-                transaction_id=transaction.id,
+                transaction_id=locked_transaction.id,
                 account_id=sender.id,
                 entry_type=LedgerEntryType.DEBIT,
-                amount=transaction.amount,
+                amount=locked_transaction.amount,
                 currency=sender.currency,
                 balance_before=sender_balance_before,
                 balance_after=sender.balance,
             )
             self._ledger_entries.create(
-                transaction_id=transaction.id,
+                transaction_id=locked_transaction.id,
                 account_id=receiver.id,
                 entry_type=LedgerEntryType.CREDIT,
                 amount=credit_amount,
@@ -275,12 +292,16 @@ class TransactionService:
                 balance_after=receiver.balance,
             )
 
-            await self._transactions.mark_success(transaction)
+            await self._transactions.mark_success(locked_transaction)
+            if confirmation is not None:
+                locked_transaction.otp_verified = True
+                await self._confirmations.mark_verified(confirmation)
+
             await self._session.commit()
             from app.core.metrics import transfers_total
 
             transfers_total.labels(outcome="success").inc()
-            return transaction
+            return locked_transaction
         except DomainError as exc:
             # Capture the id as a plain value BEFORE rollback — after
             # `rollback()`, every ORM object tied to this session (including

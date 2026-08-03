@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 import { authService } from "@/services/authService";
 import { AuthLayout } from "@/components/layout/AuthLayout";
