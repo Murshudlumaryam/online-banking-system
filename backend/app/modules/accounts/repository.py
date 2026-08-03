@@ -21,6 +21,27 @@ class AccountRepository:
         result = await self._session.execute(select(Account).where(Account.id == account_id))
         return result.scalar_one_or_none()
 
+    async def get_one_for_update(self, account_id: uuid.UUID) -> Account | None:
+        """
+        Locks a single account with SELECT ... FOR UPDATE. Used for
+        deposit/withdrawal (see TransactionService.deposit/withdraw) — a
+        single-sided operation only ever touches one account, unlike a
+        transfer which needs get_two_for_update's ordered two-account lock.
+
+        `populate_existing=True` for the same reason as get_two_for_update:
+        the calling session may already have read this account unlocked
+        earlier (e.g. an ownership check), and without this flag
+        SQLAlchemy's identity map would return that stale cached object
+        instead of refreshing it from this locked read.
+        """
+        result = await self._session.execute(
+            select(Account)
+            .where(Account.id == account_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return result.scalar_one_or_none()
+
     async def get_two_for_update(
         self, account_id_1: uuid.UUID, account_id_2: uuid.UUID
     ) -> dict[uuid.UUID, Account]:

@@ -19,6 +19,12 @@ export interface CreateAccountPayload {
   currency: string;
 }
 
+export interface DepositWithdrawalPayload {
+  amount: string;
+  currency: string;
+  note?: string;
+}
+
 export interface CreateCardPayload {
   account_id: string;
   card_type: "DEBIT" | "CREDIT";
@@ -82,6 +88,24 @@ export const adminService = {
       api.PATCH("/api/v1/admin/accounts/{account_id}/status", {
         params: { path: { account_id: accountId } },
         body: { status },
+      }),
+    );
+  },
+
+  async depositToAccount(accountId: string, payload: DepositWithdrawalPayload): Promise<TransactionResponse> {
+    return unwrap(
+      api.POST("/api/v1/admin/accounts/{account_id}/deposit", {
+        params: { path: { account_id: accountId } },
+        body: payload,
+      }),
+    );
+  },
+
+  async withdrawFromAccount(accountId: string, payload: DepositWithdrawalPayload): Promise<TransactionResponse> {
+    return unwrap(
+      api.POST("/api/v1/admin/accounts/{account_id}/withdraw", {
+        params: { path: { account_id: accountId } },
+        body: payload,
       }),
     );
   },

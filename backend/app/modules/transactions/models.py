@@ -28,19 +28,50 @@ class TransactionStatus(str, enum.Enum):
     REVERSED = "REVERSED"
 
 
+class TransactionType(str, enum.Enum):
+    TRANSFER = "TRANSFER"
+    DEPOSIT = "DEPOSIT"
+    WITHDRAWAL = "WITHDRAWAL"
+
+
 class Transaction(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "transactions"
     __table_args__ = (
         CheckConstraint("amount > 0", name="ck_transactions_amount_positive"),
+        # NULL-safe: Postgres treats a CHECK as satisfied when it evaluates
+        # to NULL (unknown), which is exactly what happens here when either
+        # side is NULL (a DEPOSIT/WITHDRAWAL) — so this still only rejects
+        # the case that actually matters: a TRANSFER naming the same
+        # account as both sender and receiver.
         CheckConstraint("sender_account_id <> receiver_account_id", name="ck_transactions_distinct_accounts"),
+        # A DEPOSIT/WITHDRAWAL is inherently single-sided (money crossing
+        # the boundary of this closed-loop system, not moving between two
+        # of its own accounts) — exactly one of sender/receiver must be set
+        # for those types, and both must be set for a TRANSFER.
+        CheckConstraint(
+            "(transaction_type = 'TRANSFER' AND sender_account_id IS NOT NULL AND receiver_account_id IS NOT NULL)"
+            " OR (transaction_type = 'DEPOSIT' AND sender_account_id IS NULL AND receiver_account_id IS NOT NULL)"
+            " OR (transaction_type = 'WITHDRAWAL' AND sender_account_id IS NOT NULL AND receiver_account_id IS NULL)",
+            name="ck_transactions_accounts_match_type",
+        ),
     )
 
     reference_number: Mapped[str] = mapped_column(String(48), unique=True, nullable=False, index=True)
-    sender_account_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False, index=True
+    transaction_type: Mapped[TransactionType] = mapped_column(
+        Enum(TransactionType, name="transaction_type", native_enum=True),
+        nullable=False,
+        default=TransactionType.TRANSFER,
+        index=True,
     )
-    receiver_account_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False, index=True
+    # Nullable because a DEPOSIT has no sender (money enters from outside
+    # this closed-loop system) and a WITHDRAWAL has no receiver (money
+    # leaves it) — see the transaction_type CHECK constraint above for the
+    # exact rule tying these to `transaction_type`.
+    sender_account_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    receiver_account_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=True, index=True
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
@@ -56,6 +87,18 @@ class Transaction(UUIDPrimaryKeyMixin, Base):
     )
     otp_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Free-text operational note — e.g. "Cash deposit at Nasimi branch" or
+    # "ATM withdrawal reversal". Unused for ordinary customer transfers;
+    # set for admin-initiated DEPOSIT/WITHDRAWAL operations.
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Who initiated this — NULL for a customer's own transfer (the customer
+    # is already identifiable via the sender account's owner). Set to the
+    # admin's user id for a DEPOSIT/WITHDRAWAL, since those represent an
+    # admin acting on a customer's account rather than the customer acting
+    # on their own.
+    performed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

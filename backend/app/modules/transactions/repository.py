@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.transactions.models import (
     Transaction,
     TransactionStatus,
+    TransactionType,
     TransferConfirmation,
 )
 
@@ -109,15 +110,19 @@ class TransactionRepository:
     def create(
         self,
         *,
-        sender_account_id: uuid.UUID,
-        receiver_account_id: uuid.UUID,
+        sender_account_id: uuid.UUID | None,
+        receiver_account_id: uuid.UUID | None,
         amount: Decimal,
         currency: str,
         exchange_rate_id: uuid.UUID | None,
         converted_amount: Decimal | None,
+        transaction_type: TransactionType = TransactionType.TRANSFER,
+        note: str | None = None,
+        performed_by_user_id: uuid.UUID | None = None,
     ) -> Transaction:
         transaction = Transaction(
             reference_number=generate_reference_number(),
+            transaction_type=transaction_type,
             sender_account_id=sender_account_id,
             receiver_account_id=receiver_account_id,
             amount=amount,
@@ -125,6 +130,8 @@ class TransactionRepository:
             exchange_rate_id=exchange_rate_id,
             converted_amount=converted_amount,
             status=TransactionStatus.PENDING,
+            note=note,
+            performed_by_user_id=performed_by_user_id,
         )
         self._session.add(transaction)
         return transaction

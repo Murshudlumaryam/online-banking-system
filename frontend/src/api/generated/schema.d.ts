@@ -570,6 +570,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/accounts/{account_id}/deposit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Deposit money into a customer's account
+         * @description Credits money into `account_id` from outside this closed-loop system —
+         *     e.g. cash handed to a teller, or an incoming external wire this system
+         *     has no real integration to receive automatically. Admin-only: there is
+         *     no self-service "add money" for a customer here, since (unlike a
+         *     transfer between two of this system's own accounts) there's no
+         *     counterparty account to debit and therefore nothing a customer's own
+         *     credentials alone could legitimately authorize.
+         */
+        post: operations["deposit_to_account_api_v1_admin_accounts__account_id__deposit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/accounts/{account_id}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Withdraw money from a customer's account
+         * @description The withdrawal counterpart of `deposit_to_account` — debits
+         *     `account_id` for money leaving the system (e.g. cash paid out at a
+         *     branch). See that endpoint's docstring for why this is admin-only.
+         */
+        post: operations["withdraw_from_account_api_v1_admin_accounts__account_id__withdraw_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/accounts/{account_id}/status": {
         parameters: {
             query?: never;
@@ -990,6 +1038,20 @@ export interface components {
             /** Accounts */
             accounts: components["schemas"]["AccountResponse"][];
         };
+        /**
+         * DepositRequest
+         * @description Admin-only — see TransactionService.deposit's docstring for why this
+         *     is an admin action rather than customer self-service in a system with
+         *     no real payment-rail integration.
+         */
+        DepositRequest: {
+            /** Amount */
+            amount: number | string;
+            /** Currency */
+            currency: string;
+            /** Note */
+            note?: string | null;
+        };
         /** DisableTwoFactorRequest */
         DisableTwoFactorRequest: {
             /** Password */
@@ -1265,16 +1327,11 @@ export interface components {
             id: string;
             /** Reference Number */
             reference_number: string;
-            /**
-             * Sender Account Id
-             * Format: uuid
-             */
-            sender_account_id: string;
-            /**
-             * Receiver Account Id
-             * Format: uuid
-             */
-            receiver_account_id: string;
+            transaction_type: components["schemas"]["TransactionType"];
+            /** Sender Account Id */
+            sender_account_id: string | null;
+            /** Receiver Account Id */
+            receiver_account_id: string | null;
             /** Amount */
             amount: string;
             /** Currency */
@@ -1284,6 +1341,8 @@ export interface components {
             status: components["schemas"]["TransactionStatus"];
             /** Failure Reason */
             failure_reason: string | null;
+            /** Note */
+            note: string | null;
             /**
              * Created At
              * Format: date-time
@@ -1303,16 +1362,11 @@ export interface components {
             id: string;
             /** Reference Number */
             reference_number: string;
-            /**
-             * Sender Account Id
-             * Format: uuid
-             */
-            sender_account_id: string;
-            /**
-             * Receiver Account Id
-             * Format: uuid
-             */
-            receiver_account_id: string;
+            transaction_type: components["schemas"]["TransactionType"];
+            /** Sender Account Id */
+            sender_account_id: string | null;
+            /** Receiver Account Id */
+            receiver_account_id: string | null;
             /** Amount */
             amount: string;
             /** Currency */
@@ -1322,6 +1376,8 @@ export interface components {
             status: components["schemas"]["TransactionStatus"];
             /** Failure Reason */
             failure_reason: string | null;
+            /** Note */
+            note: string | null;
             /**
              * Created At
              * Format: date-time
@@ -1335,6 +1391,11 @@ export interface components {
          * @enum {string}
          */
         TransactionStatus: "PENDING" | "SUCCESS" | "FAILED" | "REVERSED";
+        /**
+         * TransactionType
+         * @enum {string}
+         */
+        TransactionType: "TRANSFER" | "DEPOSIT" | "WITHDRAWAL";
         /** TransferMoneyRequest */
         TransferMoneyRequest: {
             /**
@@ -1396,6 +1457,18 @@ export interface components {
             challenge_token: string;
             /** Code */
             code: string;
+        };
+        /**
+         * WithdrawalRequest
+         * @description Admin-only — see TransactionService.withdraw's docstring.
+         */
+        WithdrawalRequest: {
+            /** Amount */
+            amount: number | string;
+            /** Currency */
+            currency: string;
+            /** Note */
+            note?: string | null;
         };
     };
     responses: never;
@@ -2491,6 +2564,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AccountResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    deposit_to_account_api_v1_admin_accounts__account_id__deposit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepositRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransactionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    withdraw_from_account_api_v1_admin_accounts__account_id__withdraw_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WithdrawalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransactionResponse"];
                 };
             };
             /** @description Validation Error */

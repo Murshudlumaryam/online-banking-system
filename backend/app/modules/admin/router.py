@@ -25,9 +25,12 @@ from app.modules.ledger_entries.repository import LedgerEntryRepository
 from app.modules.ledger_entries.schemas import LedgerEntryResponse
 from app.modules.transactions.models import TransactionStatus
 from app.modules.transactions.schemas import (
+    DepositRequest,
     TransactionDetailResponse,
     TransactionResponse,
+    WithdrawalRequest,
 )
+from app.modules.transactions.service import TransactionService
 from app.modules.users.models import User
 from app.shared.schemas import PaginatedResponse
 
@@ -127,6 +130,64 @@ async def create_account(
     service = AdminService(session)
     account = await service.create_account(admin_user, payload)
     return AccountResponse.model_validate(account)
+
+
+@router.post(
+    "/accounts/{account_id}/deposit",
+    response_model=TransactionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Deposit money into a customer's account",
+)
+async def deposit_to_account(
+    account_id: uuid.UUID,
+    payload: DepositRequest,
+    admin_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+) -> TransactionResponse:
+    """
+    Credits money into `account_id` from outside this closed-loop system —
+    e.g. cash handed to a teller, or an incoming external wire this system
+    has no real integration to receive automatically. Admin-only: there is
+    no self-service "add money" for a customer here, since (unlike a
+    transfer between two of this system's own accounts) there's no
+    counterparty account to debit and therefore nothing a customer's own
+    credentials alone could legitimately authorize.
+    """
+    service = TransactionService(session)
+    transaction = await service.deposit(
+        account_id=account_id,
+        amount=payload.amount,
+        currency=payload.currency,
+        note=payload.note,
+        performed_by_user_id=admin_user.id,
+    )
+    return TransactionResponse.model_validate(transaction)
+
+
+@router.post(
+    "/accounts/{account_id}/withdraw",
+    response_model=TransactionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Withdraw money from a customer's account",
+)
+async def withdraw_from_account(
+    account_id: uuid.UUID,
+    payload: WithdrawalRequest,
+    admin_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+) -> TransactionResponse:
+    """The withdrawal counterpart of `deposit_to_account` — debits
+    `account_id` for money leaving the system (e.g. cash paid out at a
+    branch). See that endpoint's docstring for why this is admin-only."""
+    service = TransactionService(session)
+    transaction = await service.withdraw(
+        account_id=account_id,
+        amount=payload.amount,
+        currency=payload.currency,
+        note=payload.note,
+        performed_by_user_id=admin_user.id,
+    )
+    return TransactionResponse.model_validate(transaction)
 
 
 @router.patch(

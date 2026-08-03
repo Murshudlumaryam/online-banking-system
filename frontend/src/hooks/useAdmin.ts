@@ -6,6 +6,7 @@ import {
   type CreateAccountPayload,
   type CreateCardPayload,
   type CreateExchangeRatePayload,
+  type DepositWithdrawalPayload,
 } from "@/services/adminService";
 import type { AccountStatus, CustomerStatus, TransactionStatus } from "@/types/api";
 
@@ -53,6 +54,24 @@ export function useUpdateAccountStatus() {
   return useMutation({
     mutationFn: ({ accountId, status }: { accountId: string; status: AccountStatus }) =>
       adminService.updateAccountStatus(accountId, status),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["admin", "accounts"] }),
+  });
+}
+
+export function useDepositToAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ accountId, payload }: { accountId: string; payload: DepositWithdrawalPayload }) =>
+      adminService.depositToAccount(accountId, payload),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["admin", "accounts"] }),
+  });
+}
+
+export function useWithdrawFromAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ accountId, payload }: { accountId: string; payload: DepositWithdrawalPayload }) =>
+      adminService.withdrawFromAccount(accountId, payload),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["admin", "accounts"] }),
   });
 }

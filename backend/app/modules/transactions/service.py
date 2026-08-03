@@ -1,3 +1,4 @@
+import uuid
 from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,7 +25,7 @@ from app.modules.customers.models import Customer
 from app.modules.exchange_rates.repository import ExchangeRateRepository
 from app.modules.ledger_entries.models import LedgerEntryType
 from app.modules.ledger_entries.repository import LedgerEntryRepository
-from app.modules.transactions.models import Transaction, TransactionStatus, TransferConfirmation
+from app.modules.transactions.models import Transaction, TransactionStatus, TransactionType, TransferConfirmation
 from app.modules.transactions.repository import (
     TransactionRepository,
     TransferConfirmationRepository,
@@ -246,6 +247,15 @@ class TransactionService:
                 # were waiting for the lock — never re-process or overwrite it.
                 raise TransactionAlreadyProcessedError()
 
+            # This method only ever runs for TRANSFER-type transactions
+            # (confirm_transfer and execute_scheduled_transfer) — the DB's
+            # ck_transactions_accounts_match_type CHECK constraint guarantees
+            # both are set for that type. DEPOSIT/WITHDRAWAL (single-sided,
+            # one of these legitimately null) go through TransactionService
+            # .deposit/.withdraw instead, never through here.
+            assert locked_transaction.sender_account_id is not None
+            assert locked_transaction.receiver_account_id is not None
+
             locked_accounts = await self._accounts.get_two_for_update(
                 locked_transaction.sender_account_id, locked_transaction.receiver_account_id
             )
@@ -411,8 +421,140 @@ class TransactionService:
         return transaction
 
     async def _customer_owns_transaction(self, customer: Customer, transaction: Transaction) -> bool:
-        sender = await self._accounts.get_by_id(transaction.sender_account_id)
-        if sender is not None and sender.customer_id == customer.id:
-            return True
-        receiver = await self._accounts.get_by_id(transaction.receiver_account_id)
-        return receiver is not None and receiver.customer_id == customer.id
+        if transaction.sender_account_id is not None:
+            sender = await self._accounts.get_by_id(transaction.sender_account_id)
+            if sender is not None and sender.customer_id == customer.id:
+                return True
+        if transaction.receiver_account_id is not None:
+            receiver = await self._accounts.get_by_id(transaction.receiver_account_id)
+            if receiver is not None and receiver.customer_id == customer.id:
+                return True
+        return False
+
+    async def deposit(
+        self,
+        *,
+        account_id: uuid.UUID,
+        amount: Decimal,
+        currency: str,
+        note: str | None,
+        performed_by_user_id: uuid.UUID,
+    ) -> Transaction:
+        """
+        Credits `account_id` with money entering this closed-loop system
+        from outside it (e.g. cash handed to a teller, an incoming external
+        wire) — there is no "sender account" within the system, unlike a
+        transfer. Admin-only (see app/modules/admin/router.py): this system
+        has no real payment-rail integration, so an admin action is the
+        stand-in for whatever real-world channel actually brought the money
+        in. Atomic: account lock, balance update, single ledger entry, and
+        the transaction's SUCCESS status all commit together, mirroring the
+        same discipline as _execute_locked_transfer.
+        """
+        try:
+            account = await self._accounts.get_one_for_update(account_id)
+            if account is None:
+                raise NotFoundError("Account not found")
+            if account.status != AccountStatus.ACTIVE:
+                raise AccountNotActiveError(which="account")
+            if account.currency != currency:
+                raise CurrencyMismatchError(expected=account.currency, provided=currency)
+
+            transaction = self._transactions.create(
+                sender_account_id=None,
+                receiver_account_id=account.id,
+                amount=amount,
+                currency=currency,
+                exchange_rate_id=None,
+                converted_amount=None,
+                transaction_type=TransactionType.DEPOSIT,
+                note=note,
+                performed_by_user_id=performed_by_user_id,
+            )
+            await self._session.flush()
+
+            balance_before = account.balance
+            account.balance = account.balance + amount
+            account.version += 1
+
+            self._ledger_entries.create(
+                transaction_id=transaction.id,
+                account_id=account.id,
+                entry_type=LedgerEntryType.CREDIT,
+                amount=amount,
+                currency=currency,
+                balance_before=balance_before,
+                balance_after=account.balance,
+            )
+
+            await self._transactions.mark_success(transaction)
+            await self._session.commit()
+
+            write_audit_log_task.delay(
+                str(performed_by_user_id), "DEPOSIT", "account", str(account.id), None, None
+            )
+            return transaction
+        except DomainError:
+            await self._session.rollback()
+            raise
+
+    async def withdraw(
+        self,
+        *,
+        account_id: uuid.UUID,
+        amount: Decimal,
+        currency: str,
+        note: str | None,
+        performed_by_user_id: uuid.UUID,
+    ) -> Transaction:
+        """The withdrawal mirror of `deposit` — debits `account_id` for
+        money leaving this closed-loop system (e.g. cash paid out at a
+        branch). See `deposit`'s docstring for the shared design notes."""
+        try:
+            account = await self._accounts.get_one_for_update(account_id)
+            if account is None:
+                raise NotFoundError("Account not found")
+            if account.status != AccountStatus.ACTIVE:
+                raise AccountNotActiveError(which="account")
+            if account.currency != currency:
+                raise CurrencyMismatchError(expected=account.currency, provided=currency)
+            if account.balance < amount:
+                raise InsufficientBalanceError()
+
+            transaction = self._transactions.create(
+                sender_account_id=account.id,
+                receiver_account_id=None,
+                amount=amount,
+                currency=currency,
+                exchange_rate_id=None,
+                converted_amount=None,
+                transaction_type=TransactionType.WITHDRAWAL,
+                note=note,
+                performed_by_user_id=performed_by_user_id,
+            )
+            await self._session.flush()
+
+            balance_before = account.balance
+            account.balance = account.balance - amount
+            account.version += 1
+
+            self._ledger_entries.create(
+                transaction_id=transaction.id,
+                account_id=account.id,
+                entry_type=LedgerEntryType.DEBIT,
+                amount=amount,
+                currency=currency,
+                balance_before=balance_before,
+                balance_after=account.balance,
+            )
+
+            await self._transactions.mark_success(transaction)
+            await self._session.commit()
+
+            write_audit_log_task.delay(
+                str(performed_by_user_id), "WITHDRAWAL", "account", str(account.id), None, None
+            )
+            return transaction
+        except DomainError:
+            await self._session.rollback()
+            raise

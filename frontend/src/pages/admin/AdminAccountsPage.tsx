@@ -1,14 +1,15 @@
 import { useState } from "react";
 
-import { useAdminAccounts, useCreateCard, useUpdateAccountStatus } from "@/hooks/useAdmin";
+import { useAdminAccounts, useCreateCard, useDepositToAccount, useUpdateAccountStatus, useWithdrawFromAccount } from "@/hooks/useAdmin";
 import { getApiErrorMessage } from "@/lib/apiClient";
 import { formatAccountNumber, formatMoney } from "@/lib/format";
-import type { AccountStatus } from "@/types/api";
+import type { AccountResponse, AccountStatus } from "@/types/api";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, EmptyState, ErrorBanner, Spinner } from "@/components/ui/Feedback";
 import { Pagination } from "@/components/ui/Pagination";
 import { Select } from "@/components/ui/Select";
+import { DepositWithdrawalModal } from "@/components/modals/DepositWithdrawalModal";
 
 const STATUS_OPTIONS: AccountStatus[] = ["ACTIVE", "BLOCKED", "CLOSED", "PENDING"];
 
@@ -18,7 +19,10 @@ export function AdminAccountsPage() {
   const { data, isLoading, isError, error } = useAdminAccounts(page, statusFilter || undefined);
   const updateStatus = useUpdateAccountStatus();
   const createCard = useCreateCard();
+  const depositMutation = useDepositToAccount();
+  const withdrawMutation = useWithdrawFromAccount();
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [cashModal, setCashModal] = useState<{ mode: "deposit" | "withdraw"; account: AccountResponse } | null>(null);
 
   async function handleIssueCard(accountId: string) {
     setFeedback(null);
@@ -27,6 +31,22 @@ export function AdminAccountsPage() {
       setFeedback(`Card ${card.masked_card_number} issued.`);
     } catch (err) {
       setFeedback(getApiErrorMessage(err, "Couldn't issue a card."));
+    }
+  }
+
+  async function handleCashOperation(amount: string, note: string) {
+    if (!cashModal) return;
+    const { mode, account } = cashModal;
+    const mutation = mode === "deposit" ? depositMutation : withdrawMutation;
+    try {
+      await mutation.mutateAsync({
+        accountId: account.id,
+        payload: { amount, currency: account.currency, note: note || undefined },
+      });
+      setFeedback(`${mode === "deposit" ? "Deposited" : "Withdrew"} ${amount} ${account.currency}.`);
+      setCashModal(null);
+    } catch {
+      // Error surfaces inline in the modal via mutation.error — keep it open.
     }
   }
 
@@ -88,6 +108,12 @@ export function AdminAccountsPage() {
                     <Button size="sm" variant="secondary" onClick={() => handleIssueCard(account.id)} isLoading={createCard.isPending}>
                       Issue card
                     </Button>
+                    <Button size="sm" variant="secondary" onClick={() => setCashModal({ mode: "deposit", account })}>
+                      Deposit
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => setCashModal({ mode: "withdraw", account })}>
+                      Withdraw
+                    </Button>
                   </div>
                 </li>
               ))}
@@ -97,6 +123,24 @@ export function AdminAccountsPage() {
             <Pagination page={data.page} pageSize={data.page_size} total={data.total} onPageChange={setPage} />
           )}
         </Card>
+      )}
+
+      {cashModal && (
+        <DepositWithdrawalModal
+          mode={cashModal.mode}
+          accountNumber={formatAccountNumber(cashModal.account.account_number)}
+          currency={cashModal.account.currency}
+          isSubmitting={depositMutation.isPending || withdrawMutation.isPending}
+          errorMessage={
+            depositMutation.error
+              ? getApiErrorMessage(depositMutation.error, "Couldn't complete the deposit.")
+              : withdrawMutation.error
+                ? getApiErrorMessage(withdrawMutation.error, "Couldn't complete the withdrawal.")
+                : null
+          }
+          onSubmit={handleCashOperation}
+          onCancel={() => setCashModal(null)}
+        />
       )}
     </div>
   );

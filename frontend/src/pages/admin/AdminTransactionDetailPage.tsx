@@ -22,19 +22,30 @@ export function AdminTransactionDetailPage() {
             <p className="font-mono text-lg text-ink">{txn.reference_number}</p>
             <p className="mt-1 text-sm text-slate-500">{formatDateTime(txn.created_at)}</p>
           </div>
-          <Badge status={txn.status}>{txn.status}</Badge>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+              {txn.transaction_type}
+            </span>
+            <Badge status={txn.status}>{txn.status}</Badge>
+          </div>
         </div>
 
         <dl className="mt-4 grid grid-cols-2 gap-4 text-sm">
           <div>
             <dt className="text-slate-500">Sender account</dt>
-            <dd className="font-mono text-xs text-ink">{txn.sender_account_id}</dd>
+            <dd className="font-mono text-xs text-ink">
+              {txn.sender_account_id ?? <span className="italic text-slate-400">External (outside this system)</span>}
+            </dd>
           </div>
           <div>
             <dt className="text-slate-500">Receiver account</dt>
-            <dd className="font-mono text-xs text-ink">{txn.receiver_account_id}</dd>
+            <dd className="font-mono text-xs text-ink">
+              {txn.receiver_account_id ?? <span className="italic text-slate-400">External (outside this system)</span>}
+            </dd>
           </div>
         </dl>
+
+        {txn.note && <p className="mt-3 text-sm text-slate-500">Note: {txn.note}</p>}
 
         {txn.failure_reason && (
           <p className="mt-4 rounded-md bg-brick-500/5 px-3 py-2 text-sm text-brick-600">

@@ -5,7 +5,19 @@ from decimal import Decimal
 from pydantic import BaseModel, Field, field_validator
 
 from app.modules.ledger_entries.schemas import LedgerEntryResponse
-from app.modules.transactions.models import TransactionStatus
+from app.modules.transactions.models import TransactionStatus, TransactionType
+
+# Shared upper bound, defense-in-depth against the amount/converted_amount
+# columns' NUMERIC(18,2) capacity — see TransferMoneyRequest's comment
+# below for the full rationale. Deposit/withdrawal share the same ceiling.
+_MAX_AMOUNT = Decimal("1000000000")
+
+
+def _validate_two_decimal_places(value: Decimal) -> Decimal:
+    exponent = value.as_tuple().exponent
+    if isinstance(exponent, int) and exponent < -2:
+        raise ValueError("amount must have at most 2 decimal places")
+    return value
 
 
 class TransferMoneyRequest(BaseModel):
@@ -23,16 +35,51 @@ class TransferMoneyRequest(BaseModel):
     # information leak, but a confusing error for something that should be
     # a clean 422). A real product-level per-transfer limit belongs here
     # too eventually; this is the safety ceiling, not that policy decision.
-    amount: Decimal = Field(gt=0, le=Decimal("1000000000"))
+    amount: Decimal = Field(gt=0, le=_MAX_AMOUNT)
     currency: str = Field(min_length=3, max_length=3)
 
     @field_validator("amount")
     @classmethod
     def amount_max_two_decimal_places(cls, value: Decimal) -> Decimal:
-        exponent = value.as_tuple().exponent
-        if isinstance(exponent, int) and exponent < -2:
-            raise ValueError("amount must have at most 2 decimal places")
-        return value
+        return _validate_two_decimal_places(value)
+
+    @field_validator("currency")
+    @classmethod
+    def currency_uppercase(cls, value: str) -> str:
+        return value.upper()
+
+
+class DepositRequest(BaseModel):
+    """Admin-only — see TransactionService.deposit's docstring for why this
+    is an admin action rather than customer self-service in a system with
+    no real payment-rail integration."""
+
+    amount: Decimal = Field(gt=0, le=_MAX_AMOUNT)
+    currency: str = Field(min_length=3, max_length=3)
+    note: str | None = Field(default=None, max_length=500)
+
+    @field_validator("amount")
+    @classmethod
+    def amount_max_two_decimal_places(cls, value: Decimal) -> Decimal:
+        return _validate_two_decimal_places(value)
+
+    @field_validator("currency")
+    @classmethod
+    def currency_uppercase(cls, value: str) -> str:
+        return value.upper()
+
+
+class WithdrawalRequest(BaseModel):
+    """Admin-only — see TransactionService.withdraw's docstring."""
+
+    amount: Decimal = Field(gt=0, le=_MAX_AMOUNT)
+    currency: str = Field(min_length=3, max_length=3)
+    note: str | None = Field(default=None, max_length=500)
+
+    @field_validator("amount")
+    @classmethod
+    def amount_max_two_decimal_places(cls, value: Decimal) -> Decimal:
+        return _validate_two_decimal_places(value)
 
     @field_validator("currency")
     @classmethod
@@ -47,13 +94,17 @@ class ConfirmTransferRequest(BaseModel):
 class TransactionResponse(BaseModel):
     id: uuid.UUID
     reference_number: str
-    sender_account_id: uuid.UUID
-    receiver_account_id: uuid.UUID
+    transaction_type: TransactionType
+    # Nullable: a DEPOSIT has no sender (money entered from outside this
+    # closed-loop system) and a WITHDRAWAL has no receiver (money left it).
+    sender_account_id: uuid.UUID | None
+    receiver_account_id: uuid.UUID | None
     amount: Decimal
     currency: str
     converted_amount: Decimal | None
     status: TransactionStatus
     failure_reason: str | None
+    note: str | None
     created_at: datetime
     completed_at: datetime | None
 

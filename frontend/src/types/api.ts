@@ -124,16 +124,22 @@ export interface LedgerEntryResponse {
   created_at: string;
 }
 
+export type TransactionType = "TRANSFER" | "DEPOSIT" | "WITHDRAWAL";
+
 export interface TransactionResponse {
   id: string;
   reference_number: string;
-  sender_account_id: string;
-  receiver_account_id: string;
+  transaction_type: TransactionType;
+  // Nullable: a DEPOSIT has no sender (money entered from outside this
+  // closed-loop system) and a WITHDRAWAL has no receiver (money left it).
+  sender_account_id: string | null;
+  receiver_account_id: string | null;
   amount: string;
   currency: string;
   converted_amount: string | null;
   status: TransactionStatus;
   failure_reason: string | null;
+  note: string | null;
   created_at: string;
   completed_at: string | null;
 }
