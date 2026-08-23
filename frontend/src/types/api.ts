@@ -125,7 +125,7 @@ export interface LedgerEntryResponse {
   created_at: string;
 }
 
-export type TransactionType = "TRANSFER" | "DEPOSIT" | "WITHDRAWAL";
+export type TransactionType = "TRANSFER" | "DEPOSIT" | "WITHDRAWAL" | "CARD_PAYMENT";
 
 export interface TransactionResponse {
   id: string;
@@ -141,6 +141,8 @@ export interface TransactionResponse {
   status: TransactionStatus;
   failure_reason: string | null;
   note: string | null;
+  // Set only for CARD_PAYMENT — which card was charged.
+  card_id: string | null;
   created_at: string;
   completed_at: string | null;
 }

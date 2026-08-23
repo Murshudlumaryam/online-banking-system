@@ -7,7 +7,7 @@ from sqlalchemy import Date, DateTime, Enum, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.db.base import Base, SoftDeleteMixin, TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
     from app.modules.accounts.models import Account
@@ -19,7 +19,7 @@ class CardStatus(str, enum.Enum):
     EXPIRED = "EXPIRED"
 
 
-class Card(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+class Card(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "cards"
 
     account_id: Mapped[uuid.UUID] = mapped_column(

@@ -28,13 +28,28 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        transaction_per_migration=True,
     )
     with context.begin_transaction():
         context.run_migrations()
 
 
 def do_run_migrations(connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+    # transaction_per_migration=True: each migration file commits on its
+    # own instead of the whole `alembic upgrade head` run sharing one
+    # transaction. Required for migrations like 0010/0011, which add a new
+    # Postgres enum value and then use it in a CHECK constraint —
+    # asyncpg/Postgres refuse to reference a brand-new enum value before
+    # the transaction that added it has actually committed
+    # ("UnsafeNewEnumValueUsageError: New enum values must be committed
+    # before they can be used"), which a single shared transaction across
+    # the whole run would never satisfy.
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        compare_type=True,
+        transaction_per_migration=True,
+    )
     with context.begin_transaction():
         context.run_migrations()
 

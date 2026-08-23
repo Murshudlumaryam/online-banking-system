@@ -91,6 +91,14 @@ export function useBlockCard() {
   });
 }
 
+export function useDeleteCard() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (cardId: string) => adminService.deleteCard(cardId),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["admin", "cards"] }),
+  });
+}
+
 export function useAdminTransactions(page: number, status?: TransactionStatus, search?: string) {
   return useQuery({
     queryKey: ["admin", "transactions", page, status, search],

@@ -1,5 +1,11 @@
 import { api } from "@/api/client";
-import type { CardResponse } from "@/types/api";
+import type { CardResponse, TransactionResponse } from "@/types/api";
+
+export interface CardPaymentPayload {
+  amount: string;
+  currency: string;
+  merchant_name: string;
+}
 
 async function unwrap<T>(promise: Promise<{ data?: T; error?: unknown; response: Response }>): Promise<T> {
   const { data, error, response } = await promise;
@@ -18,5 +24,14 @@ export const cardsService = {
 
   async block(cardId: string): Promise<CardResponse> {
     return unwrap(api.POST("/api/v1/cards/{card_id}/block", { params: { path: { card_id: cardId } } }));
+  },
+
+  async pay(cardId: string, payload: CardPaymentPayload): Promise<TransactionResponse> {
+    return unwrap(
+      api.POST("/api/v1/cards/{card_id}/pay", {
+        params: { path: { card_id: cardId } },
+        body: payload,
+      }),
+    );
   },
 };

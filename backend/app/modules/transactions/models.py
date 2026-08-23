@@ -32,6 +32,7 @@ class TransactionType(str, enum.Enum):
     TRANSFER = "TRANSFER"
     DEPOSIT = "DEPOSIT"
     WITHDRAWAL = "WITHDRAWAL"
+    CARD_PAYMENT = "CARD_PAYMENT"
 
 
 class Transaction(UUIDPrimaryKeyMixin, Base):
@@ -51,7 +52,8 @@ class Transaction(UUIDPrimaryKeyMixin, Base):
         CheckConstraint(
             "(transaction_type = 'TRANSFER' AND sender_account_id IS NOT NULL AND receiver_account_id IS NOT NULL)"
             " OR (transaction_type = 'DEPOSIT' AND sender_account_id IS NULL AND receiver_account_id IS NOT NULL)"
-            " OR (transaction_type = 'WITHDRAWAL' AND sender_account_id IS NOT NULL AND receiver_account_id IS NULL)",
+            " OR (transaction_type = 'WITHDRAWAL' AND sender_account_id IS NOT NULL AND receiver_account_id IS NULL)"
+            " OR (transaction_type = 'CARD_PAYMENT' AND sender_account_id IS NOT NULL AND receiver_account_id IS NULL)",
             name="ck_transactions_accounts_match_type",
         ),
     )
@@ -106,6 +108,12 @@ class Transaction(UUIDPrimaryKeyMixin, Base):
     # ledger rows are append-only and never edited after the fact.
     reversal_of_transaction_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("transactions.id", ondelete="SET NULL"), nullable=True, unique=True
+    )
+    # Set only for CARD_PAYMENT — which specific card was swiped/charged.
+    # NULL for every other transaction_type (a transfer/deposit/withdrawal
+    # isn't tied to a card at all).
+    card_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("cards.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

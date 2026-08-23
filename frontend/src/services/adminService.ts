@@ -144,6 +144,10 @@ export const adminService = {
     );
   },
 
+  async deleteCard(cardId: string): Promise<void> {
+    await unwrap(api.DELETE("/api/v1/admin/cards/{card_id}", { params: { path: { card_id: cardId } } }));
+  },
+
   async listCards(page: number, status?: string): Promise<PaginatedResponse<CardResponse>> {
     return unwrap(
       api.GET("/api/v1/admin/cards", {

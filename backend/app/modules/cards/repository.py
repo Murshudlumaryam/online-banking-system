@@ -39,14 +39,30 @@ class CardRepository:
         self._session = session
 
     async def get_by_id(self, card_id: uuid.UUID) -> Card | None:
-        result = await self._session.execute(select(Card).where(Card.id == card_id))
+        result = await self._session.execute(
+            select(Card).where(Card.id == card_id, Card.deleted_at.is_(None))
+        )
+        return result.scalar_one_or_none()
+
+    async def get_one_for_update(self, card_id: uuid.UUID) -> Card | None:
+        """Locks a single card row with SELECT ... FOR UPDATE — used by
+        CardService.pay_with_card so a card can't be blocked/deleted by one
+        request while a payment against it is mid-flight in another. See
+        AccountRepository.get_one_for_update's docstring for why
+        populate_existing=True matters here too."""
+        result = await self._session.execute(
+            select(Card)
+            .where(Card.id == card_id, Card.deleted_at.is_(None))
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
         return result.scalar_one_or_none()
 
     async def list_for_customer(self, customer_id: uuid.UUID) -> list[Card]:
         result = await self._session.execute(
             select(Card)
             .join(Account, Account.id == Card.account_id)
-            .where(Account.customer_id == customer_id)
+            .where(Account.customer_id == customer_id, Card.deleted_at.is_(None))
             .order_by(Card.created_at)
         )
         return list(result.scalars().all())
@@ -56,7 +72,7 @@ class CardRepository:
     ) -> tuple[list[Card], int]:
         """Admin-facing: every card in the system, not scoped to one
         customer. See app/modules/admin/router.py's GET /admin/cards."""
-        query = select(Card)
+        query = select(Card).where(Card.deleted_at.is_(None))
         if status is not None:
             query = query.where(Card.status == status)
 
@@ -87,5 +103,12 @@ class CardRepository:
         return card
 
     async def save(self, card: Card) -> None:
+        self._session.add(card)
+        await self._session.flush()
+
+    async def soft_delete(self, card: Card) -> None:
+        from datetime import datetime, timezone
+
+        card.deleted_at = datetime.now(timezone.utc)
         self._session.add(card)
         await self._session.flush()

@@ -121,6 +121,7 @@ class TransactionRepository:
         transaction_type: TransactionType = TransactionType.TRANSFER,
         note: str | None = None,
         performed_by_user_id: uuid.UUID | None = None,
+        card_id: uuid.UUID | None = None,
     ) -> Transaction:
         transaction = Transaction(
             reference_number=generate_reference_number(),
@@ -134,6 +135,7 @@ class TransactionRepository:
             status=TransactionStatus.PENDING,
             note=note,
             performed_by_user_id=performed_by_user_id,
+            card_id=card_id,
         )
         self._session.add(transaction)
         return transaction

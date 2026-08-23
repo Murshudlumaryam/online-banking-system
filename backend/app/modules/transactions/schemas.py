@@ -105,6 +105,8 @@ class TransactionResponse(BaseModel):
     status: TransactionStatus
     failure_reason: str | None
     note: str | None
+    # Set only for CARD_PAYMENT — which card was charged.
+    card_id: uuid.UUID | None
     created_at: datetime
     completed_at: datetime | None
 

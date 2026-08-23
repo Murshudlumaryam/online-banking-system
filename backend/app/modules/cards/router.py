@@ -5,10 +5,11 @@ from app.db.session import get_db
 from app.modules.cards.dependencies import get_owned_card
 from app.modules.cards.models import Card
 from app.modules.cards.repository import CardRepository
-from app.modules.cards.schemas import CardResponse
+from app.modules.cards.schemas import CardPaymentRequest, CardResponse
 from app.modules.cards.service import CardService
 from app.modules.customers.dependencies import get_current_customer
 from app.modules.customers.models import Customer
+from app.modules.transactions.schemas import TransactionResponse
 
 router = APIRouter(prefix="/api/v1/cards", tags=["cards"])
 
@@ -41,3 +42,22 @@ async def block_own_card(
     service = CardService(session)
     blocked_card = await service.block_own_card(customer, card)
     return CardResponse.model_validate(blocked_card)
+
+
+@router.post(
+    "/{card_id}/pay",
+    response_model=TransactionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Simulate a card purchase (charges the account behind this card)",
+)
+async def pay_with_card(
+    payload: CardPaymentRequest,
+    card: Card = Depends(get_owned_card),
+    customer: Customer = Depends(get_current_customer),
+    session: AsyncSession = Depends(get_db),
+) -> TransactionResponse:
+    service = CardService(session)
+    transaction = await service.pay_with_card(
+        customer, card.id, amount=payload.amount, currency=payload.currency, merchant_name=payload.merchant_name
+    )
+    return TransactionResponse.model_validate(transaction)

@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { useAdminCards, useBlockCard } from "@/hooks/useAdmin";
+import { useAdminCards, useBlockCard, useDeleteCard } from "@/hooks/useAdmin";
 import { getApiErrorMessage } from "@/lib/apiClient";
 import { formatDate } from "@/lib/format";
 import type { CardStatus } from "@/types/api";
@@ -18,6 +18,7 @@ export function AdminCardsPage() {
   const [statusFilter, setStatusFilter] = useState<CardStatus | "">("");
   const { data, isLoading, isError, error } = useAdminCards(page, statusFilter || undefined);
   const blockCard = useBlockCard();
+  const deleteCard = useDeleteCard();
   const [feedback, setFeedback] = useState<string | null>(null);
 
   async function handleBlock(cardId: string) {
@@ -27,6 +28,20 @@ export function AdminCardsPage() {
       setFeedback("Card blocked.");
     } catch (err) {
       setFeedback(getApiErrorMessage(err, "Couldn't block this card."));
+    }
+  }
+
+  async function handleDelete(cardId: string) {
+    setFeedback(null);
+    const confirmed = window.confirm(
+      "Remove this card? It will disappear from the customer's card list. Its transaction history is kept for audit purposes.",
+    );
+    if (!confirmed) return;
+    try {
+      await deleteCard.mutateAsync(cardId);
+      setFeedback("Card removed.");
+    } catch (err) {
+      setFeedback(getApiErrorMessage(err, "Couldn't remove this card."));
     }
   }
 
@@ -81,16 +96,26 @@ export function AdminCardsPage() {
                       <Badge status={card.status}>{card.status}</Badge>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {card.status === "ACTIVE" && (
+                      <div className="flex justify-end gap-2">
+                        {card.status === "ACTIVE" && (
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            isLoading={blockCard.isPending}
+                            onClick={() => void handleBlock(card.id)}
+                          >
+                            Block
+                          </Button>
+                        )}
                         <Button
                           size="sm"
-                          variant="danger"
-                          isLoading={blockCard.isPending}
-                          onClick={() => void handleBlock(card.id)}
+                          variant="ghost"
+                          isLoading={deleteCard.isPending}
+                          onClick={() => void handleDelete(card.id)}
                         >
-                          Block
+                          Remove
                         </Button>
-                      )}
+                      </div>
                     </td>
                   </tr>
                 ))}

@@ -170,6 +170,27 @@ class AdminService:
         )
         return card
 
+    async def delete_card(self, admin_user: User, card_id: uuid.UUID) -> None:
+        """
+        Soft-deletes a card — never a physical DELETE. Matches the
+        SoftDeleteMixin used elsewhere (users, customers, beneficiaries):
+        a card's history has to remain reconstructable (which transactions
+        it made, who used it and when) even after it's been "removed" from
+        the customer's active list. Deleting is deliberately not
+        restricted to already-blocked cards — an admin may need to remove
+        a mistakenly-issued card immediately.
+        """
+        card = await self._cards.get_by_id(card_id)
+        if card is None:
+            raise NotFoundError("Card not found")
+
+        await self._cards.soft_delete(card)
+        await self._session.commit()
+
+        write_audit_log_task.delay(
+            str(admin_user.id), "ADMIN_CARD_DELETED", "card", str(card_id), None, None
+        )
+
     # ------------------------------------------------------------------
     # Transactions (monitoring)
     # ------------------------------------------------------------------

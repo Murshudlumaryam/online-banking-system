@@ -345,6 +345,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cards/{card_id}/pay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Simulate a card purchase (charges the account behind this card) */
+        post: operations["pay_with_card_api_v1_cards__card_id__pay_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/beneficiaries": {
         parameters: {
             query?: never;
@@ -688,6 +705,23 @@ export interface paths {
         patch: operations["block_card_api_v1_admin_cards__card_id__block_patch"];
         trace?: never;
     };
+    "/api/v1/admin/cards/{card_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a card (soft delete — its history is preserved, not shown to the customer) */
+        delete: operations["delete_card_api_v1_admin_cards__card_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/beneficiaries": {
         parameters: {
             query?: never;
@@ -949,6 +983,19 @@ export interface components {
             beneficiary_name: string;
             /** Nickname */
             nickname: string | null;
+        };
+        /**
+         * CardPaymentRequest
+         * @description A simulated card purchase — see CardService.pay_with_card's
+         *     docstring for what this does and doesn't represent.
+         */
+        CardPaymentRequest: {
+            /** Amount */
+            amount: number | string;
+            /** Currency */
+            currency: string;
+            /** Merchant Name */
+            merchant_name: string;
         };
         /** CardResponse */
         CardResponse: {
@@ -1456,6 +1503,8 @@ export interface components {
             failure_reason: string | null;
             /** Note */
             note: string | null;
+            /** Card Id */
+            card_id: string | null;
             /**
              * Created At
              * Format: date-time
@@ -1491,6 +1540,8 @@ export interface components {
             failure_reason: string | null;
             /** Note */
             note: string | null;
+            /** Card Id */
+            card_id: string | null;
             /**
              * Created At
              * Format: date-time
@@ -1508,7 +1559,7 @@ export interface components {
          * TransactionType
          * @enum {string}
          */
-        TransactionType: "TRANSFER" | "DEPOSIT" | "WITHDRAWAL";
+        TransactionType: "TRANSFER" | "DEPOSIT" | "WITHDRAWAL" | "CARD_PAYMENT";
         /** TransferMoneyRequest */
         TransferMoneyRequest: {
             /**
@@ -2162,6 +2213,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CardResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pay_with_card_api_v1_cards__card_id__pay_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                card_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CardPaymentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransactionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2948,6 +3034,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CardResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_card_api_v1_admin_cards__card_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                card_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

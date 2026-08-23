@@ -286,6 +286,20 @@ async def block_card(
     return CardResponse.model_validate(card)
 
 
+@router.delete(
+    "/cards/{card_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove a card (soft delete — its history is preserved, not shown to the customer)",
+)
+async def delete_card(
+    card_id: uuid.UUID,
+    admin_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+) -> None:
+    service = AdminService(session)
+    await service.delete_card(admin_user, card_id)
+
+
 # ----------------------------------------------------------------------
 # Beneficiaries
 # ----------------------------------------------------------------------

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { cardsService } from "@/services/cardsService";
+import { cardsService, type CardPaymentPayload } from "@/services/cardsService";
 
 export function useCards() {
   return useQuery({
@@ -14,5 +14,12 @@ export function useBlockCard() {
   return useMutation({
     mutationFn: (cardId: string) => cardsService.block(cardId),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["cards"] }),
+  });
+}
+
+export function usePayWithCard() {
+  return useMutation({
+    mutationFn: ({ cardId, payload }: { cardId: string; payload: CardPaymentPayload }) =>
+      cardsService.pay(cardId, payload),
   });
 }
