@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 from httpx import AsyncClient
 
@@ -88,6 +90,7 @@ async def test_cannot_access_another_customers_account(
             "last_name": "Person",
             "date_of_birth": str(date(1991, 2, 2)),
             "phone_number": "+994501112222",
+            "national_id": f"TEST{uuid.uuid4().hex[:12].upper()}",
         },
     )
     other_login = await client.post(

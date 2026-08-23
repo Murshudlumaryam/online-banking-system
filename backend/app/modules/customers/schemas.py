@@ -18,6 +18,12 @@ class CustomerProfileResponse(BaseModel):
     address: str | None
     national_id: str | None
     status: CustomerStatus
+    # Lives on the related User row, not Customer — 2FA is an
+    # authentication concept, not a customer-profile one. Populated
+    # explicitly by the router (see get_my_profile), not by
+    # model_validate(customer) alone, since Customer has no direct column
+    # for it.
+    totp_enabled: bool = False
 
     model_config = {"from_attributes": True}
 

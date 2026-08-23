@@ -58,6 +58,7 @@ export interface CustomerProfile {
   address: string | null;
   national_id: string | null;
   status: CustomerStatus;
+  totp_enabled: boolean;
 }
 
 export interface CurrencyBalance {

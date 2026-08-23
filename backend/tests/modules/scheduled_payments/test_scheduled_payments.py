@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 from httpx import AsyncClient
 
@@ -134,6 +136,7 @@ async def test_cannot_cancel_another_customers_scheduled_payment(
             "last_name": "Person",
             "date_of_birth": str(date(1990, 1, 1)),
             "phone_number": "+994501112233",
+            "national_id": f"TEST{uuid.uuid4().hex[:12].upper()}",
         },
     )
     other_login = await client.post(

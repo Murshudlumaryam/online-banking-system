@@ -15,4 +15,8 @@ export const cardsService = {
   async getById(cardId: string): Promise<CardResponse> {
     return unwrap(api.GET("/api/v1/cards/{card_id}", { params: { path: { card_id: cardId } } }));
   },
+
+  async block(cardId: string): Promise<CardResponse> {
+    return unwrap(api.POST("/api/v1/cards/{card_id}/block", { params: { path: { card_id: cardId } } }));
+  },
 };

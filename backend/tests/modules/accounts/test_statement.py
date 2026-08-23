@@ -1,3 +1,4 @@
+import uuid
 from datetime import date, timedelta
 
 import pytest
@@ -115,6 +116,7 @@ async def test_cannot_get_statement_for_another_customers_account(
             "last_name": "Person",
             "date_of_birth": str(date_cls(1990, 1, 1)),
             "phone_number": "+994501112233",
+            "national_id": f"TEST{uuid.uuid4().hex[:12].upper()}",
         },
     )
     other_login = await client.post(

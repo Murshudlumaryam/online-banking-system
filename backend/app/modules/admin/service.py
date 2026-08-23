@@ -8,6 +8,7 @@ from app.core.exceptions import NotFoundError
 from app.modules.accounts.models import Account, AccountStatus
 from app.modules.accounts.repository import AccountRepository, generate_account_number
 from app.modules.admin.schemas import (
+    AdminCreateCustomerRequest,
     CreateAccountRequest,
     CreateCardRequest,
     CreateExchangeRateRequest,
@@ -15,6 +16,7 @@ from app.modules.admin.schemas import (
     UpdateCustomerStatusRequest,
 )
 from app.modules.audit_logs.repository import AuditLogRepository
+from app.modules.beneficiaries.repository import BeneficiaryRepository
 from app.modules.cards.models import Card
 from app.modules.cards.repository import CardRepository, generate_synthetic_pan
 from app.modules.customers.models import Customer
@@ -35,12 +37,15 @@ class AdminService:
         self._exchange_rates = ExchangeRateRepository(session)
         self._transactions = TransactionRepository(session)
         self._audit_logs = AuditLogRepository(session)
+        self._beneficiaries = BeneficiaryRepository(session)
 
     # ------------------------------------------------------------------
     # Customers
     # ------------------------------------------------------------------
-    async def list_customers(self, *, page: int, page_size: int, status=None):
-        return await self._customers.list_all(offset=(page - 1) * page_size, limit=page_size, status=status)
+    async def list_customers(self, *, page: int, page_size: int, status=None, search: str | None = None):
+        return await self._customers.list_all(
+            offset=(page - 1) * page_size, limit=page_size, status=status, search=search
+        )
 
     async def get_customer(self, customer_id: uuid.UUID) -> Customer:
         customer = await self._customers.get_by_id(customer_id)
@@ -73,8 +78,10 @@ class AdminService:
     # ------------------------------------------------------------------
     # Accounts
     # ------------------------------------------------------------------
-    async def list_accounts(self, *, page: int, page_size: int, status=None):
-        return await self._accounts.list_all(offset=(page - 1) * page_size, limit=page_size, status=status)
+    async def list_accounts(self, *, page: int, page_size: int, status=None, search: str | None = None):
+        return await self._accounts.list_all(
+            offset=(page - 1) * page_size, limit=page_size, status=status, search=search
+        )
 
     async def create_account(self, admin_user: User, payload: CreateAccountRequest) -> Account:
         customer = await self.get_customer(payload.customer_id)
@@ -166,9 +173,9 @@ class AdminService:
     # ------------------------------------------------------------------
     # Transactions (monitoring)
     # ------------------------------------------------------------------
-    async def list_transactions(self, *, page: int, page_size: int, status=None):
+    async def list_transactions(self, *, page: int, page_size: int, status=None, search: str | None = None):
         return await self._transactions.list_all(
-            offset=(page - 1) * page_size, limit=page_size, status=status
+            offset=(page - 1) * page_size, limit=page_size, status=status, search=search
         )
 
     async def get_transaction(self, transaction_id: uuid.UUID) -> Transaction:
@@ -211,3 +218,74 @@ class AdminService:
             {"pair": f"{payload.source_currency}->{payload.target_currency}", "rate": str(payload.rate)},
         )
         return rate
+
+    # ------------------------------------------------------------------
+    # Cards (system-wide view)
+    # ------------------------------------------------------------------
+    async def list_cards(self, *, page: int, page_size: int, status=None):
+        return await self._cards.list_all(offset=(page - 1) * page_size, limit=page_size, status=status)
+
+    # ------------------------------------------------------------------
+    # Beneficiaries (system-wide view)
+    # ------------------------------------------------------------------
+    async def list_beneficiaries(self, *, page: int, page_size: int):
+        return await self._beneficiaries.list_all(offset=(page - 1) * page_size, limit=page_size)
+
+    # ------------------------------------------------------------------
+    # Customer onboarding (admin-initiated)
+    # ------------------------------------------------------------------
+    async def create_customer(
+        self, admin_user: User, payload: AdminCreateCustomerRequest
+    ) -> Customer:
+        """Mirrors AuthService.register's TOCTOU-race handling (see that
+        method's comments) — the same email/national_id UNIQUE constraints
+        apply here, so the same IntegrityError -> clean ConflictError
+        translation is needed rather than trusting the pre-checks alone."""
+        from sqlalchemy.exc import IntegrityError
+
+        from app.core.exceptions import ConflictError
+        from app.core.security import hash_password
+        from app.modules.users.repository import UserRepository
+
+        users = UserRepository(self._session)
+        if await users.email_exists(payload.email):
+            raise ConflictError("A user with this email already exists")
+        if await self._customers.national_id_exists(payload.national_id):
+            raise ConflictError("A customer with this national ID already exists")
+
+        try:
+            user = users.create(email=payload.email, password_hash=hash_password(payload.temporary_password))
+            await self._session.flush()
+
+            customer = self._customers.create(
+                user_id=user.id,
+                first_name=payload.first_name,
+                last_name=payload.last_name,
+                date_of_birth=payload.date_of_birth,
+                phone_number=payload.phone_number,
+                address=payload.address,
+                national_id=payload.national_id,
+            )
+            await self._session.commit()
+        except IntegrityError as exc:
+            await self._session.rollback()
+            raise ConflictError("This email or national ID is already registered") from exc
+
+        await self._session.refresh(customer)
+
+        write_audit_log_task.delay(
+            str(admin_user.id), "ADMIN_CUSTOMER_CREATED", "customer", str(customer.id), None,
+            {"email": payload.email},
+        )
+        return customer
+
+    # ------------------------------------------------------------------
+    # Transaction reversal
+    # ------------------------------------------------------------------
+    async def reverse_transaction(
+        self, admin_user: User, transaction_id: uuid.UUID, reason: str
+    ) -> Transaction:
+        from app.modules.transactions.service import TransactionService
+
+        service = TransactionService(self._session)
+        return await service.reverse_transaction(admin_user, transaction_id, reason)

@@ -8,6 +8,7 @@ const navItems: NavItem[] = [
   { to: "/app/transfer", label: "Transfer" },
   { to: "/app/transactions", label: "Transactions" },
   { to: "/app/beneficiaries", label: "Beneficiaries" },
+  { to: "/app/scheduled-payments", label: "Scheduled payments" },
   { to: "/app/cards", label: "Cards" },
   { to: "/app/profile", label: "Profile" },
 ];
@@ -18,6 +19,7 @@ const titles: Record<string, string> = {
   "/app/transfer": "Transfer money",
   "/app/transactions": "Transactions",
   "/app/beneficiaries": "Beneficiaries",
+  "/app/scheduled-payments": "Scheduled payments",
   "/app/cards": "Cards",
   "/app/profile": "Profile",
 };

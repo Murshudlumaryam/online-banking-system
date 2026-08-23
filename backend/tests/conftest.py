@@ -219,6 +219,7 @@ async def registered_customer(client: AsyncClient, db_session, unique_email: str
         "last_name": "User",
         "date_of_birth": str(date(1993, 6, 15)),
         "phone_number": "+994551234567",
+        "national_id": f"TEST{uuid.uuid4().hex[:12].upper()}",
     }
     await client.post("/api/v1/auth/register", json=payload)
     login = await client.post(

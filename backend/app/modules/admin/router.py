@@ -8,15 +8,19 @@ from app.db.session import get_db
 from app.modules.accounts.models import AccountStatus
 from app.modules.accounts.schemas import AccountResponse
 from app.modules.admin.schemas import (
+    AdminCreateCustomerRequest,
     CreateAccountRequest,
     CreateCardRequest,
     CreateExchangeRateRequest,
+    ReverseTransactionRequest,
     UpdateAccountStatusRequest,
     UpdateCustomerStatusRequest,
 )
 from app.modules.admin.service import AdminService
 from app.modules.audit_logs.schemas import AuditLogResponse
 from app.modules.auth.dependencies import require_admin
+from app.modules.beneficiaries.schemas import BeneficiaryResponse
+from app.modules.cards.models import CardStatus
 from app.modules.cards.schemas import CardResponse
 from app.modules.customers.models import CustomerStatus
 from app.modules.customers.schemas import CustomerProfileResponse
@@ -49,11 +53,16 @@ async def list_customers(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     status_filter: CustomerStatus | None = Query(default=None, alias="status"),
+    search: str | None = Query(
+        default=None, description="Matches name, email, phone, national ID, or customer number"
+    ),
     admin_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_db),
 ) -> PaginatedResponse[CustomerProfileResponse]:
     service = AdminService(session)
-    customers, total = await service.list_customers(page=page, page_size=page_size, status=status_filter)
+    customers, total = await service.list_customers(
+        page=page, page_size=page_size, status=status_filter, search=search
+    )
     return PaginatedResponse[CustomerProfileResponse](
         items=[CustomerProfileResponse.model_validate(c) for c in customers],
         total=total,
@@ -93,6 +102,22 @@ async def update_customer_status(
     return CustomerProfileResponse.model_validate(customer)
 
 
+@router.post(
+    "/customers",
+    response_model=CustomerProfileResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Open an account for a customer who can't self-register (e.g. a walk-in branch customer)",
+)
+async def create_customer(
+    payload: AdminCreateCustomerRequest,
+    admin_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+) -> CustomerProfileResponse:
+    service = AdminService(session)
+    customer = await service.create_customer(admin_user, payload)
+    return CustomerProfileResponse.model_validate(customer)
+
+
 # ----------------------------------------------------------------------
 # Accounts
 # ----------------------------------------------------------------------
@@ -103,11 +128,14 @@ async def list_accounts(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     status_filter: AccountStatus | None = Query(default=None, alias="status"),
+    search: str | None = Query(default=None, description="Matches account number"),
     admin_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_db),
 ) -> PaginatedResponse[AccountResponse]:
     service = AdminService(session)
-    accounts, total = await service.list_accounts(page=page, page_size=page_size, status=status_filter)
+    accounts, total = await service.list_accounts(
+        page=page, page_size=page_size, status=status_filter, search=search
+    )
     return PaginatedResponse[AccountResponse](
         items=[AccountResponse.model_validate(a) for a in accounts],
         total=total,
@@ -209,6 +237,28 @@ async def update_account_status(
 # ----------------------------------------------------------------------
 # Cards
 # ----------------------------------------------------------------------
+@router.get(
+    "/cards",
+    response_model=PaginatedResponse[CardResponse],
+    summary="List every card issued across all customers",
+)
+async def list_cards(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    status_filter: CardStatus | None = Query(default=None, alias="status"),
+    admin_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+) -> PaginatedResponse[CardResponse]:
+    service = AdminService(session)
+    cards, total = await service.list_cards(page=page, page_size=page_size, status=status_filter)
+    return PaginatedResponse[CardResponse](
+        items=[CardResponse.model_validate(c) for c in cards],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
 @router.post(
     "/cards",
     response_model=CardResponse,
@@ -237,6 +287,30 @@ async def block_card(
 
 
 # ----------------------------------------------------------------------
+# Beneficiaries
+# ----------------------------------------------------------------------
+@router.get(
+    "/beneficiaries",
+    response_model=PaginatedResponse[BeneficiaryResponse],
+    summary="List every customer's saved beneficiaries",
+)
+async def list_beneficiaries(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    admin_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+) -> PaginatedResponse[BeneficiaryResponse]:
+    service = AdminService(session)
+    beneficiaries, total = await service.list_beneficiaries(page=page, page_size=page_size)
+    return PaginatedResponse[BeneficiaryResponse](
+        items=[BeneficiaryResponse.model_validate(b) for b in beneficiaries],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+# ----------------------------------------------------------------------
 # Transactions (monitoring)
 # ----------------------------------------------------------------------
 @router.get(
@@ -248,12 +322,13 @@ async def list_transactions(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     status_filter: TransactionStatus | None = Query(default=None, alias="status"),
+    search: str | None = Query(default=None, description="Matches the reference number (e.g. TXN-...)"),
     admin_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_db),
 ) -> PaginatedResponse[TransactionResponse]:
     service = AdminService(session)
     transactions, total = await service.list_transactions(
-        page=page, page_size=page_size, status=status_filter
+        page=page, page_size=page_size, status=status_filter, search=search
     )
     return PaginatedResponse[TransactionResponse](
         items=[TransactionResponse.model_validate(t) for t in transactions],
@@ -280,6 +355,23 @@ async def get_transaction(
         **TransactionResponse.model_validate(transaction).model_dump(),
         ledger_entries=[LedgerEntryResponse.model_validate(e) for e in ledger_entries],
     )
+
+
+@router.post(
+    "/transactions/{transaction_id}/reverse",
+    response_model=TransactionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Reverse a completed transaction (creates a new, opposite-direction transaction)",
+)
+async def reverse_transaction(
+    transaction_id: uuid.UUID,
+    payload: ReverseTransactionRequest,
+    admin_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+) -> TransactionResponse:
+    service = AdminService(session)
+    reversal = await service.reverse_transaction(admin_user, transaction_id, payload.reason)
+    return TransactionResponse.model_validate(reversal)
 
 
 # ----------------------------------------------------------------------

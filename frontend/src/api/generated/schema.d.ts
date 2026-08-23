@@ -328,6 +328,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cards/{card_id}/block": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Block your own card (e.g. lost or stolen) — irreversible; ask an admin to issue a new one */
+        post: operations["block_own_card_api_v1_cards__card_id__block_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/beneficiaries": {
         parameters: {
             query?: never;
@@ -511,7 +528,8 @@ export interface paths {
         /** List all customers (admin) */
         get: operations["list_customers_api_v1_admin_customers_get"];
         put?: never;
-        post?: never;
+        /** Open an account for a customer who can't self-register (e.g. a walk-in branch customer) */
+        post: operations["create_customer_api_v1_admin_customers_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -642,7 +660,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List every card issued across all customers */
+        get: operations["list_cards_api_v1_admin_cards_get"];
         put?: never;
         /** Issue a new card for an account */
         post: operations["create_card_api_v1_admin_cards_post"];
@@ -667,6 +686,23 @@ export interface paths {
         head?: never;
         /** Block a card */
         patch: operations["block_card_api_v1_admin_cards__card_id__block_patch"];
+        trace?: never;
+    };
+    "/api/v1/admin/beneficiaries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List every customer's saved beneficiaries */
+        get: operations["list_beneficiaries_api_v1_admin_beneficiaries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/admin/transactions": {
@@ -697,6 +733,23 @@ export interface paths {
         get: operations["get_transaction_api_v1_admin_transactions__transaction_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/transactions/{transaction_id}/reverse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reverse a completed transaction (creates a new, opposite-direction transaction) */
+        post: operations["reverse_transaction_api_v1_admin_transactions__transaction_id__reverse_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -830,6 +883,34 @@ export interface components {
          * @enum {string}
          */
         AccountStatus: "ACTIVE" | "BLOCKED" | "CLOSED" | "PENDING";
+        /**
+         * AdminCreateCustomerRequest
+         * @description Lets an admin open an account for a customer who can't (or hasn't
+         *     yet) self-registered — e.g. a walk-in branch customer. Distinct from
+         *     RegisterCustomerRequest (auth module) mainly in who's allowed to call
+         *     it and that it doesn't log the caller in afterward.
+         */
+        AdminCreateCustomerRequest: {
+            /** Email */
+            email: string;
+            /** Temporary Password */
+            temporary_password: string;
+            /** First Name */
+            first_name: string;
+            /** Last Name */
+            last_name: string;
+            /**
+             * Date Of Birth
+             * Format: date
+             */
+            date_of_birth: string;
+            /** Phone Number */
+            phone_number: string;
+            /** Address */
+            address?: string | null;
+            /** National Id */
+            national_id: string;
+        };
         /** AuditLogResponse */
         AuditLogResponse: {
             /**
@@ -1005,6 +1086,11 @@ export interface components {
             /** National Id */
             national_id: string | null;
             status: components["schemas"]["CustomerStatus"];
+            /**
+             * Totp Enabled
+             * @default false
+             */
+            totp_enabled: boolean;
         };
         /**
          * CustomerStatus
@@ -1193,6 +1279,28 @@ export interface components {
             /** Page Size */
             page_size: number;
         };
+        /** PaginatedResponse[BeneficiaryResponse] */
+        PaginatedResponse_BeneficiaryResponse_: {
+            /** Items */
+            items: components["schemas"]["BeneficiaryResponse"][];
+            /** Total */
+            total: number;
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+        };
+        /** PaginatedResponse[CardResponse] */
+        PaginatedResponse_CardResponse_: {
+            /** Items */
+            items: components["schemas"]["CardResponse"][];
+            /** Total */
+            total: number;
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+        };
         /** PaginatedResponse[CustomerProfileResponse] */
         PaginatedResponse_CustomerProfileResponse_: {
             /** Items */
@@ -1265,7 +1373,7 @@ export interface components {
             /** Address */
             address?: string | null;
             /** National Id */
-            national_id?: string | null;
+            national_id: string;
         };
         /** RegisterResponse */
         RegisterResponse: {
@@ -1277,6 +1385,11 @@ export interface components {
             /** Email */
             email: string;
             customer: components["schemas"]["CustomerSummary"];
+        };
+        /** ReverseTransactionRequest */
+        ReverseTransactionRequest: {
+            /** Reason */
+            reason: string;
         };
         /** ScheduledPaymentResponse */
         ScheduledPaymentResponse: {
@@ -2031,6 +2144,37 @@ export interface operations {
             };
         };
     };
+    block_own_card_api_v1_cards__card_id__block_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                card_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CardResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_beneficiaries_api_v1_beneficiaries_get: {
         parameters: {
             query?: never;
@@ -2418,6 +2562,8 @@ export interface operations {
                 page?: number;
                 page_size?: number;
                 status?: components["schemas"]["CustomerStatus"] | null;
+                /** @description Matches name, email, phone, national ID, or customer number */
+                search?: string | null;
             };
             header?: never;
             path?: never;
@@ -2432,6 +2578,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaginatedResponse_CustomerProfileResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_customer_api_v1_admin_customers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminCreateCustomerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerProfileResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2517,6 +2696,8 @@ export interface operations {
                 page?: number;
                 page_size?: number;
                 status?: components["schemas"]["AccountStatus"] | null;
+                /** @description Matches account number */
+                search?: string | null;
             };
             header?: never;
             path?: never;
@@ -2682,6 +2863,39 @@ export interface operations {
             };
         };
     };
+    list_cards_api_v1_admin_cards_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                status?: components["schemas"]["CardStatus"] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedResponse_CardResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_card_api_v1_admin_cards_post: {
         parameters: {
             query?: never;
@@ -2746,12 +2960,46 @@ export interface operations {
             };
         };
     };
+    list_beneficiaries_api_v1_admin_beneficiaries_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedResponse_BeneficiaryResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_transactions_api_v1_admin_transactions_get: {
         parameters: {
             query?: {
                 page?: number;
                 page_size?: number;
                 status?: components["schemas"]["TransactionStatus"] | null;
+                /** @description Matches the reference number (e.g. TXN-...) */
+                search?: string | null;
             };
             header?: never;
             path?: never;
@@ -2797,6 +3045,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TransactionDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reverse_transaction_api_v1_admin_transactions__transaction_id__reverse_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                transaction_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReverseTransactionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransactionResponse"];
                 };
             };
             /** @description Validation Error */

@@ -140,6 +140,13 @@ class TransactionAlreadyProcessedError(ConflictError):
         super().__init__("This transaction has already been confirmed, failed, or reversed")
 
 
+class TransactionNotReversibleError(ConflictError):
+    error_code = "TRANSACTION_NOT_REVERSIBLE"
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(f"This transaction cannot be reversed: {reason}")
+
+
 class OtpExpiredError(UnauthorizedError):
     error_code = "OTP_EXPIRED"
 

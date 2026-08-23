@@ -93,11 +93,13 @@ class TransactionRepository:
         return list(result.scalars().all()), total
 
     async def list_all(
-        self, *, offset: int, limit: int, status: TransactionStatus | None = None
+        self, *, offset: int, limit: int, status: TransactionStatus | None = None, search: str | None = None
     ) -> tuple[list[Transaction], int]:
         query = select(Transaction)
         if status is not None:
             query = query.where(Transaction.status == status)
+        if search:
+            query = query.where(Transaction.reference_number.ilike(f"%{search}%"))
 
         count_result = await self._session.execute(query.with_only_columns(Transaction.id))
         total = len(count_result.all())
@@ -146,6 +148,21 @@ class TransactionRepository:
         transaction.status = TransactionStatus.SUCCESS
         transaction.completed_at = datetime.now(timezone.utc)
         self._session.add(transaction)
+
+    async def save(self, transaction: Transaction) -> None:
+        self._session.add(transaction)
+        await self._session.flush()
+
+    async def get_by_reversal_of(self, transaction_id: uuid.UUID) -> Transaction | None:
+        """Returns the transaction (if any) whose `reversal_of_transaction_id`
+        points at `transaction_id` — i.e. whether this transaction has
+        already been reversed once. The UNIQUE constraint on that column
+        (migration 0009) is the actual guarantee; this is just how the
+        service layer checks it up front for a clean error message."""
+        result = await self._session.execute(
+            select(Transaction).where(Transaction.reversal_of_transaction_id == transaction_id)
+        )
+        return result.scalar_one_or_none()
 
 
 class TransferConfirmationRepository:

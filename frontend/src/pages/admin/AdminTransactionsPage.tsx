@@ -2,11 +2,13 @@ import { useState } from "react";
 import { Link } from "react-router";
 
 import { useAdminTransactions } from "@/hooks/useAdmin";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { getApiErrorMessage } from "@/lib/apiClient";
 import { formatDateTime, formatMoney } from "@/lib/format";
 import type { TransactionStatus } from "@/types/api";
 import { Badge } from "@/components/ui/Badge";
 import { Card, EmptyState, ErrorBanner, Spinner } from "@/components/ui/Feedback";
+import { Input } from "@/components/ui/Input";
 import { Pagination } from "@/components/ui/Pagination";
 import { Select } from "@/components/ui/Select";
 
@@ -15,26 +17,45 @@ const STATUS_OPTIONS: TransactionStatus[] = ["PENDING", "SUCCESS", "FAILED", "RE
 export function AdminTransactionsPage() {
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<TransactionStatus | "">("");
-  const { data, isLoading, isError, error } = useAdminTransactions(page, statusFilter || undefined);
+  const [searchInput, setSearchInput] = useState("");
+  const search = useDebouncedValue(searchInput);
+  const { data, isLoading, isError, error } = useAdminTransactions(
+    page,
+    statusFilter || undefined,
+    search || undefined,
+  );
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="max-w-xs">
-        <Select
-          label="Filter by status"
-          value={statusFilter}
-          onChange={(e) => {
-            setStatusFilter(e.target.value as TransactionStatus | "");
-            setPage(1);
-          }}
-        >
-          <option value="">All statuses</option>
-          {STATUS_OPTIONS.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </Select>
+      <div className="flex flex-wrap items-end gap-4">
+        <div className="max-w-sm flex-1">
+          <Input
+            label="Search"
+            placeholder="Reference number (e.g. TXN-...)"
+            value={searchInput}
+            onChange={(e) => {
+              setSearchInput(e.target.value);
+              setPage(1);
+            }}
+          />
+        </div>
+        <div className="max-w-xs">
+          <Select
+            label="Filter by status"
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value as TransactionStatus | "");
+              setPage(1);
+            }}
+          >
+            <option value="">All statuses</option>
+            {STATUS_OPTIONS.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </Select>
+        </div>
       </div>
 
       {isLoading ? (

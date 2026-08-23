@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -41,6 +42,7 @@ async def _register_second_customer(client: AsyncClient, email: str) -> dict:
         "last_name": "Customer",
         "date_of_birth": str(date(1994, 4, 4)),
         "phone_number": "+994701234000",
+        "national_id": f"TEST{uuid.uuid4().hex[:12].upper()}",
     }
     await client.post("/api/v1/auth/register", json=payload)
     login = await client.post("/api/v1/auth/login", json={"email": email, "password": "StrongPass1"})

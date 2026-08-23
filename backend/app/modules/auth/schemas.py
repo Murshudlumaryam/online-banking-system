@@ -12,7 +12,10 @@ class RegisterCustomerRequest(BaseModel):
     date_of_birth: date
     phone_number: str = Field(min_length=5, max_length=32)
     address: str | None = Field(default=None, max_length=500)
-    national_id: str | None = Field(default=None, max_length=64)
+    # Required, not optional: this is a bank, and a national ID (FIN/SSN
+    # equivalent) is the baseline KYC identity check — an account without
+    # one can't be verified to belong to a real, identifiable person.
+    national_id: str = Field(min_length=1, max_length=64)
 
     @field_validator("date_of_birth")
     @classmethod

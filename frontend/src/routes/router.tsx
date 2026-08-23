@@ -4,6 +4,8 @@ import { AdminRoute, GuestOnlyRoute, ProtectedRoute } from "@/components/layout/
 import { AdminLayout } from "@/pages/admin/AdminLayout";
 import { AdminAccountsPage } from "@/pages/admin/AdminAccountsPage";
 import { AdminAuditLogsPage } from "@/pages/admin/AdminAuditLogsPage";
+import { AdminBeneficiariesPage } from "@/pages/admin/AdminBeneficiariesPage";
+import { AdminCardsPage } from "@/pages/admin/AdminCardsPage";
 import { AdminCustomerDetailPage } from "@/pages/admin/AdminCustomerDetailPage";
 import { AdminCustomersPage } from "@/pages/admin/AdminCustomersPage";
 import { AdminExchangeRatesPage } from "@/pages/admin/AdminExchangeRatesPage";
@@ -20,6 +22,7 @@ import { CardsPage } from "@/pages/customer/CardsPage";
 import { CustomerLayout } from "@/pages/customer/CustomerLayout";
 import { DashboardPage } from "@/pages/customer/DashboardPage";
 import { ProfilePage } from "@/pages/customer/ProfilePage";
+import { ScheduledPaymentsPage } from "@/pages/customer/ScheduledPaymentsPage";
 import { TransactionDetailPage } from "@/pages/customer/TransactionDetailPage";
 import { TransactionsPage } from "@/pages/customer/TransactionsPage";
 import { TransferPage } from "@/pages/customer/TransferPage";
@@ -69,6 +72,7 @@ export const router = createBrowserRouter([
       { path: "transactions", element: <TransactionsPage /> },
       { path: "transactions/:transactionId", element: <TransactionDetailPage /> },
       { path: "beneficiaries", element: <BeneficiariesPage /> },
+      { path: "scheduled-payments", element: <ScheduledPaymentsPage /> },
       { path: "cards", element: <CardsPage /> },
       { path: "profile", element: <ProfilePage /> },
     ],
@@ -86,6 +90,8 @@ export const router = createBrowserRouter([
       { path: "customers", element: <AdminCustomersPage /> },
       { path: "customers/:customerId", element: <AdminCustomerDetailPage /> },
       { path: "accounts", element: <AdminAccountsPage /> },
+      { path: "cards", element: <AdminCardsPage /> },
+      { path: "beneficiaries", element: <AdminBeneficiariesPage /> },
       { path: "transactions", element: <AdminTransactionsPage /> },
       { path: "transactions/:transactionId", element: <AdminTransactionDetailPage /> },
       { path: "exchange-rates", element: <AdminExchangeRatesPage /> },

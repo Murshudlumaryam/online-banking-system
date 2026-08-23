@@ -1,12 +1,14 @@
 import { useState } from "react";
 
 import { useAdminAccounts, useCreateCard, useDepositToAccount, useUpdateAccountStatus, useWithdrawFromAccount } from "@/hooks/useAdmin";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { getApiErrorMessage } from "@/lib/apiClient";
 import { formatAccountNumber, formatMoney } from "@/lib/format";
 import type { AccountResponse, AccountStatus } from "@/types/api";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, EmptyState, ErrorBanner, Spinner } from "@/components/ui/Feedback";
+import { Input } from "@/components/ui/Input";
 import { Pagination } from "@/components/ui/Pagination";
 import { Select } from "@/components/ui/Select";
 import { DepositWithdrawalModal } from "@/components/modals/DepositWithdrawalModal";
@@ -16,7 +18,9 @@ const STATUS_OPTIONS: AccountStatus[] = ["ACTIVE", "BLOCKED", "CLOSED", "PENDING
 export function AdminAccountsPage() {
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<AccountStatus | "">("");
-  const { data, isLoading, isError, error } = useAdminAccounts(page, statusFilter || undefined);
+  const [searchInput, setSearchInput] = useState("");
+  const search = useDebouncedValue(searchInput);
+  const { data, isLoading, isError, error } = useAdminAccounts(page, statusFilter || undefined, search || undefined);
   const updateStatus = useUpdateAccountStatus();
   const createCard = useCreateCard();
   const depositMutation = useDepositToAccount();
@@ -52,22 +56,35 @@ export function AdminAccountsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="max-w-xs">
-        <Select
-          label="Filter by status"
-          value={statusFilter}
-          onChange={(e) => {
-            setStatusFilter(e.target.value as AccountStatus | "");
-            setPage(1);
-          }}
-        >
-          <option value="">All statuses</option>
-          {STATUS_OPTIONS.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </Select>
+      <div className="flex flex-wrap items-end gap-4">
+        <div className="max-w-sm flex-1">
+          <Input
+            label="Search"
+            placeholder="Account number"
+            value={searchInput}
+            onChange={(e) => {
+              setSearchInput(e.target.value);
+              setPage(1);
+            }}
+          />
+        </div>
+        <div className="max-w-xs">
+          <Select
+            label="Filter by status"
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value as AccountStatus | "");
+              setPage(1);
+            }}
+          >
+            <option value="">All statuses</option>
+            {STATUS_OPTIONS.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </Select>
+        </div>
       </div>
 
       {feedback && <p className="text-sm text-slate-600">{feedback}</p>}

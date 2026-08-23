@@ -13,6 +13,29 @@ async def test_get_my_profile(client: AsyncClient, registered_customer: dict):
     body = response.json()
     assert body["first_name"] == "Test"
     assert body["customer_number"].startswith("CUS-")
+    # Regression test: totp_enabled was missing from this response entirely
+    # (Customer has no such column — it lives on the related User row) —
+    # without it, the frontend has no way to know whether 2FA is on, so it
+    # can never render "Enable 2FA" vs "Disable 2FA" correctly.
+    assert body["totp_enabled"] is False
+
+
+@pytest.mark.asyncio
+async def test_profile_reflects_totp_enabled_after_2fa_is_turned_on(
+    client: AsyncClient, registered_customer: dict
+):
+    import pyotp
+
+    setup = await client.post("/api/v1/auth/2fa/setup", headers=registered_customer["headers"])
+    secret = setup.json()["secret"]
+    await client.post(
+        "/api/v1/auth/2fa/enable",
+        json={"code": pyotp.TOTP(secret).now()},
+        headers=registered_customer["headers"],
+    )
+
+    response = await client.get("/api/v1/customers/me", headers=registered_customer["headers"])
+    assert response.json()["totp_enabled"] is True
 
 
 @pytest.mark.asyncio

@@ -17,6 +17,7 @@ from app.core.exceptions import (
     SameAccountTransferError,
     TooManyOtpAttemptsError,
     TransactionAlreadyProcessedError,
+    TransactionNotReversibleError,
 )
 from app.core.security import generate_otp_code, hash_otp_code, verify_otp_code
 from app.modules.accounts.models import AccountStatus
@@ -31,6 +32,7 @@ from app.modules.transactions.repository import (
     TransferConfirmationRepository,
 )
 from app.modules.transactions.schemas import TransferMoneyRequest
+from app.modules.users.models import User
 
 settings = get_settings()
 
@@ -555,6 +557,131 @@ class TransactionService:
                 str(performed_by_user_id), "WITHDRAWAL", "account", str(account.id), None, None
             )
             return transaction
+        except DomainError:
+            await self._session.rollback()
+            raise
+
+    async def reverse_transaction(
+        self, admin_user: User, transaction_id: uuid.UUID, reason: str
+    ) -> Transaction:
+        """
+        Admin-only. Creates a brand-new transaction that moves money back
+        the opposite way from a completed one, and marks the original
+        REVERSED. Deliberately does NOT edit the original transaction's
+        amount or its ledger rows — ledger entries are append-only (see
+        LedgerEntry's docstring); a reversal is a new, independently
+        auditable movement of money, not a correction of history.
+
+        Reversal direction depends on the original's type:
+        - TRANSFER sender->receiver reverses as receiver->sender.
+        - DEPOSIT (money entered from outside) reverses as a WITHDRAWAL
+          from the account it credited.
+        - WITHDRAWAL reverses as a DEPOSIT back into the account it debited.
+
+        Uses the same lock-the-transaction-row-first-and-recheck-status
+        discipline as _execute_locked_transfer/deposit/withdraw — see those
+        docstrings and TransactionRepository.get_for_update's docstring for
+        why this specific ordering is what actually prevents a double
+        -reversal race, not just an application-level pre-check.
+        """
+        try:
+            original = await self._transactions.get_for_update(transaction_id)
+            if original is None:
+                raise NotFoundError("Transaction not found")
+            if original.status != TransactionStatus.SUCCESS:
+                raise TransactionNotReversibleError(
+                    f"only a SUCCESS transaction can be reversed (this one is {original.status.value})"
+                )
+
+            existing_reversal = await self._transactions.get_by_reversal_of(original.id)
+            if existing_reversal is not None:
+                raise TransactionNotReversibleError("this transaction has already been reversed once")
+
+            if original.transaction_type == TransactionType.TRANSFER:
+                assert original.sender_account_id is not None
+                assert original.receiver_account_id is not None
+                locked = await self._accounts.get_two_for_update(
+                    original.sender_account_id, original.receiver_account_id
+                )
+                reversal_sender = locked[original.receiver_account_id]
+                reversal_receiver = locked[original.sender_account_id]
+                new_sender_id: uuid.UUID | None = reversal_sender.id
+                new_receiver_id: uuid.UUID | None = reversal_receiver.id
+                new_type = TransactionType.TRANSFER
+                if reversal_sender.status != AccountStatus.ACTIVE:
+                    raise AccountNotActiveError(which="original receiver's account")
+                if reversal_receiver.status != AccountStatus.ACTIVE:
+                    raise AccountNotActiveError(which="original sender's account")
+                if reversal_sender.balance < original.amount:
+                    raise InsufficientBalanceError()
+            elif original.transaction_type == TransactionType.DEPOSIT:
+                assert original.receiver_account_id is not None
+                account = await self._accounts.get_one_for_update(original.receiver_account_id)
+                assert account is not None
+                if account.status != AccountStatus.ACTIVE:
+                    raise AccountNotActiveError(which="account")
+                if account.balance < original.amount:
+                    raise InsufficientBalanceError()
+                new_sender_id, new_receiver_id = account.id, None
+                new_type = TransactionType.WITHDRAWAL
+            elif original.transaction_type == TransactionType.WITHDRAWAL:
+                assert original.sender_account_id is not None
+                account = await self._accounts.get_one_for_update(original.sender_account_id)
+                assert account is not None
+                if account.status != AccountStatus.ACTIVE:
+                    raise AccountNotActiveError(which="account")
+                new_sender_id, new_receiver_id = None, account.id
+                new_type = TransactionType.DEPOSIT
+            else:
+                raise TransactionNotReversibleError(f"unknown transaction type {original.transaction_type}")
+
+            reversal = self._transactions.create(
+                sender_account_id=new_sender_id,
+                receiver_account_id=new_receiver_id,
+                amount=original.amount,
+                currency=original.currency,
+                exchange_rate_id=None,
+                converted_amount=None,
+                transaction_type=new_type,
+                note=f"Reversal of {original.reference_number}: {reason}",
+                performed_by_user_id=admin_user.id,
+            )
+            reversal.reversal_of_transaction_id = original.id
+            await self._session.flush()
+
+            if new_sender_id is not None:
+                sender_account = await self._accounts.get_one_for_update(new_sender_id)
+                assert sender_account is not None
+                sender_balance_before = sender_account.balance
+                sender_account.balance = sender_account.balance - original.amount
+                sender_account.version += 1
+                self._ledger_entries.create(
+                    transaction_id=reversal.id, account_id=sender_account.id,
+                    entry_type=LedgerEntryType.DEBIT, amount=original.amount, currency=original.currency,
+                    balance_before=sender_balance_before, balance_after=sender_account.balance,
+                )
+            if new_receiver_id is not None:
+                receiver_account = await self._accounts.get_one_for_update(new_receiver_id)
+                assert receiver_account is not None
+                receiver_balance_before = receiver_account.balance
+                receiver_account.balance = receiver_account.balance + original.amount
+                receiver_account.version += 1
+                self._ledger_entries.create(
+                    transaction_id=reversal.id, account_id=receiver_account.id,
+                    entry_type=LedgerEntryType.CREDIT, amount=original.amount, currency=original.currency,
+                    balance_before=receiver_balance_before, balance_after=receiver_account.balance,
+                )
+
+            await self._transactions.mark_success(reversal)
+            original.status = TransactionStatus.REVERSED
+            await self._transactions.save(original)
+            await self._session.commit()
+
+            write_audit_log_task.delay(
+                str(admin_user.id), "ADMIN_TRANSACTION_REVERSED", "transaction", str(original.id), None,
+                {"reversal_transaction_id": str(reversal.id), "reason": reason},
+            )
+            return reversal
         except DomainError:
             await self._session.rollback()
             raise

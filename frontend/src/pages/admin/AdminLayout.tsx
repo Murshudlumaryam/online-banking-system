@@ -5,6 +5,8 @@ import { AppShell, type NavItem } from "@/components/layout/AppShell";
 const navItems: NavItem[] = [
   { to: "/admin/customers", label: "Customers" },
   { to: "/admin/accounts", label: "Accounts" },
+  { to: "/admin/cards", label: "Cards" },
+  { to: "/admin/beneficiaries", label: "Beneficiaries" },
   { to: "/admin/transactions", label: "Transactions" },
   { to: "/admin/exchange-rates", label: "Exchange rates" },
   { to: "/admin/audit-logs", label: "Audit logs" },
@@ -13,6 +15,8 @@ const navItems: NavItem[] = [
 const titles: Record<string, string> = {
   "/admin/customers": "Customers",
   "/admin/accounts": "Accounts",
+  "/admin/cards": "Cards",
+  "/admin/beneficiaries": "Beneficiaries",
   "/admin/transactions": "Transactions",
   "/admin/exchange-rates": "Exchange rates",
   "/admin/audit-logs": "Audit logs",

@@ -26,6 +26,19 @@ class BeneficiaryRepository:
         )
         return list(result.scalars().all())
 
+    async def list_all(self, *, offset: int, limit: int) -> tuple[list[Beneficiary], int]:
+        """Admin-facing: every customer's beneficiaries, not scoped to one
+        customer. See app/modules/admin/router.py's GET /admin/beneficiaries."""
+        query = select(Beneficiary).where(Beneficiary.status == BeneficiaryStatus.ACTIVE)
+
+        count_result = await self._session.execute(query.with_only_columns(Beneficiary.id))
+        total = len(count_result.all())
+
+        result = await self._session.execute(
+            query.order_by(Beneficiary.created_at.desc()).offset(offset).limit(limit)
+        )
+        return list(result.scalars().all()), total
+
     def create(
         self,
         *,

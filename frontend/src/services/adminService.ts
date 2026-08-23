@@ -3,6 +3,7 @@ import type {
   AccountResponse,
   AccountStatus,
   AuditLogResponse,
+  BeneficiaryResponse,
   CardResponse,
   CustomerProfile,
   CustomerStatus,
@@ -17,6 +18,17 @@ export interface CreateAccountPayload {
   customer_id: string;
   account_type: "CHECKING" | "SAVINGS";
   currency: string;
+}
+
+export interface AdminCreateCustomerPayload {
+  email: string;
+  temporary_password: string;
+  first_name: string;
+  last_name: string;
+  date_of_birth: string;
+  phone_number: string;
+  address?: string;
+  national_id: string;
 }
 
 export interface DepositWithdrawalPayload {
@@ -54,9 +66,13 @@ async function unwrap<T>(promise: Promise<{ data?: T; error?: unknown; response:
 }
 
 export const adminService = {
-  async listCustomers(page: number, status?: CustomerStatus): Promise<PaginatedResponse<CustomerProfile>> {
+  async listCustomers(
+    page: number,
+    status?: CustomerStatus,
+    search?: string,
+  ): Promise<PaginatedResponse<CustomerProfile>> {
     return unwrap(
-      api.GET("/api/v1/admin/customers", { params: { query: { page, status } } }),
+      api.GET("/api/v1/admin/customers", { params: { query: { page, status, search } } }),
     );
   },
 
@@ -75,8 +91,12 @@ export const adminService = {
     );
   },
 
-  async listAccounts(page: number, status?: AccountStatus): Promise<PaginatedResponse<AccountResponse>> {
-    return unwrap(api.GET("/api/v1/admin/accounts", { params: { query: { page, status } } }));
+  async listAccounts(
+    page: number,
+    status?: AccountStatus,
+    search?: string,
+  ): Promise<PaginatedResponse<AccountResponse>> {
+    return unwrap(api.GET("/api/v1/admin/accounts", { params: { query: { page, status, search } } }));
   },
 
   async createAccount(payload: CreateAccountPayload): Promise<AccountResponse> {
@@ -124,11 +144,37 @@ export const adminService = {
     );
   },
 
+  async listCards(page: number, status?: string): Promise<PaginatedResponse<CardResponse>> {
+    return unwrap(
+      api.GET("/api/v1/admin/cards", {
+        params: { query: { page, status: status as never } },
+      }),
+    );
+  },
+
+  async listBeneficiaries(page: number): Promise<PaginatedResponse<BeneficiaryResponse>> {
+    return unwrap(api.GET("/api/v1/admin/beneficiaries", { params: { query: { page } } }));
+  },
+
+  async createCustomer(payload: AdminCreateCustomerPayload): Promise<CustomerProfile> {
+    return unwrap(api.POST("/api/v1/admin/customers", { body: payload }));
+  },
+
+  async reverseTransaction(transactionId: string, reason: string): Promise<TransactionResponse> {
+    return unwrap(
+      api.POST("/api/v1/admin/transactions/{transaction_id}/reverse", {
+        params: { path: { transaction_id: transactionId } },
+        body: { reason },
+      }),
+    );
+  },
+
   async listTransactions(
     page: number,
     status?: TransactionStatus,
+    search?: string,
   ): Promise<PaginatedResponse<TransactionResponse>> {
-    return unwrap(api.GET("/api/v1/admin/transactions", { params: { query: { page, status } } }));
+    return unwrap(api.GET("/api/v1/admin/transactions", { params: { query: { page, status, search } } }));
   },
 
   async getTransaction(transactionId: string): Promise<TransactionDetailResponse> {

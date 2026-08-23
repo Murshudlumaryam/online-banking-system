@@ -99,6 +99,14 @@ class Transaction(UUIDPrimaryKeyMixin, Base):
     performed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    # Set on the NEW transaction created by an admin reversal — points back
+    # at the original transaction it reverses. The original transaction's
+    # own status is separately set to REVERSED (see TransactionService
+    # .reverse_transaction) rather than mutating its amount/ledger, since
+    # ledger rows are append-only and never edited after the fact.
+    reversal_of_transaction_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("transactions.id", ondelete="SET NULL"), nullable=True, unique=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -2,7 +2,7 @@ import secrets
 import uuid
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.customers.models import Customer, CustomerStatus
@@ -24,11 +24,28 @@ class CustomerRepository:
         return result.scalar_one_or_none()
 
     async def list_all(
-        self, *, offset: int, limit: int, status: CustomerStatus | None = None
+        self, *, offset: int, limit: int, status: CustomerStatus | None = None, search: str | None = None
     ) -> tuple[list[Customer], int]:
+        from app.modules.users.models import User
+
         query = select(Customer).where(Customer.deleted_at.is_(None))
         if status is not None:
             query = query.where(Customer.status == status)
+        if search:
+            # Joins Customer -> User so a single search box can match name,
+            # phone, national ID, customer number, OR email in one query —
+            # an admin looking someone up rarely knows which field they have.
+            pattern = f"%{search}%"
+            query = query.join(User, User.id == Customer.user_id).where(
+                or_(
+                    Customer.first_name.ilike(pattern),
+                    Customer.last_name.ilike(pattern),
+                    Customer.phone_number.ilike(pattern),
+                    Customer.national_id.ilike(pattern),
+                    Customer.customer_number.ilike(pattern),
+                    User.email.ilike(pattern),
+                )
+            )
 
         count_result = await self._session.execute(query.with_only_columns(Customer.id))
         total = len(count_result.all())

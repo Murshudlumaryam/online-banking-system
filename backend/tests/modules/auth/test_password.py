@@ -1,3 +1,4 @@
+import uuid
 from datetime import date
 
 import pytest
@@ -14,6 +15,7 @@ def _register_payload(email: str) -> dict:
         "last_name": "Guliyev",
         "date_of_birth": str(date(1988, 7, 4)),
         "phone_number": "+994121112233",
+        "national_id": f"TEST{uuid.uuid4().hex[:12].upper()}",
     }
 
 

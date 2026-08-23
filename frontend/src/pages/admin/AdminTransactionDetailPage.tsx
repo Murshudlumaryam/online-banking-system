@@ -1,18 +1,77 @@
+import { useState } from "react";
+import type { FormEvent } from "react";
 import { useParams } from "react-router";
 
-import { useAdminTransaction } from "@/hooks/useAdmin";
+import { useAdminTransaction, useReverseTransaction } from "@/hooks/useAdmin";
 import { getApiErrorMessage } from "@/lib/apiClient";
 import { formatDateTime, formatMoney } from "@/lib/format";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { Card, ErrorBanner, Spinner } from "@/components/ui/Feedback";
+import { Input } from "@/components/ui/Input";
+
+function ReverseTransactionForm({
+  transactionId,
+  onDone,
+}: {
+  transactionId: string;
+  onDone: () => void;
+}) {
+  const [reason, setReason] = useState("");
+  const reverseTransaction = useReverseTransaction();
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    try {
+      await reverseTransaction.mutateAsync({ transactionId, reason });
+      onDone();
+    } catch {
+      // Error surfaces inline below via mutation.error.
+    }
+  }
+
+  return (
+    <form
+      className="mt-4 flex flex-col gap-3 rounded-md border border-brick-500/20 bg-brick-500/5 p-4"
+      onSubmit={handleSubmit}
+      noValidate
+    >
+      {reverseTransaction.isError && (
+        <ErrorBanner message={getApiErrorMessage(reverseTransaction.error, "Couldn't reverse this transaction.")} />
+      )}
+      <p className="text-sm text-slate-600">
+        This creates a new, opposite-direction transaction and marks the original as REVERSED. It
+        cannot be undone.
+      </p>
+      <Input
+        label="Reason"
+        required
+        placeholder="e.g. customer disputed this charge"
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+      />
+      <div className="flex gap-3">
+        <Button type="submit" variant="danger" isLoading={reverseTransaction.isPending}>
+          Confirm reversal
+        </Button>
+        <Button type="button" variant="ghost" onClick={onDone}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  );
+}
 
 export function AdminTransactionDetailPage() {
   const { transactionId } = useParams<{ transactionId: string }>();
   const { data: txn, isLoading, isError, error } = useAdminTransaction(transactionId);
+  const [isReversing, setIsReversing] = useState(false);
 
   if (isLoading) return <Spinner label="Loading transaction" />;
   if (isError) return <ErrorBanner message={getApiErrorMessage(error, "Transaction not found.")} />;
   if (!txn) return null;
+
+  const canReverse = txn.status === "SUCCESS";
 
   return (
     <div className="max-w-xl">
@@ -84,6 +143,18 @@ export function AdminTransactionDetailPage() {
             ))}
           </ul>
         </div>
+
+        {canReverse && (
+          <div className="mt-6 border-t border-slate-100 pt-6">
+            {isReversing ? (
+              <ReverseTransactionForm transactionId={txn.id} onDone={() => setIsReversing(false)} />
+            ) : (
+              <Button variant="danger" onClick={() => setIsReversing(true)}>
+                Reverse this transaction
+              </Button>
+            )}
+          </div>
+        )}
       </Card>
     </div>
   );

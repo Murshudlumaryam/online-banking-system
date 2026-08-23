@@ -1,3 +1,4 @@
+import uuid
 from datetime import date
 
 import pyotp
@@ -13,6 +14,7 @@ def _register_payload(email: str) -> dict:
         "last_name": "Tester",
         "date_of_birth": str(date(1993, 6, 15)),
         "phone_number": "+994551239876",
+        "national_id": f"TEST{uuid.uuid4().hex[:12].upper()}",
     }
 
 

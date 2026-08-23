@@ -17,6 +17,7 @@ const initialForm = {
   dateOfBirth: "",
   phoneNumber: "",
   address: "",
+  nationalId: "",
 };
 
 function validatePassword(password: string): string | null {
@@ -58,6 +59,7 @@ export function RegisterPage() {
         date_of_birth: form.dateOfBirth,
         phone_number: form.phoneNumber,
         address: form.address || undefined,
+        national_id: form.nationalId,
       });
       await login(form.email, form.password);
       navigate("/app/dashboard", { replace: true });
@@ -117,6 +119,13 @@ export function RegisterPage() {
           placeholder="+994501234567"
           value={form.phoneNumber}
           onChange={(e) => updateField("phoneNumber", e.target.value)}
+        />
+        <Input
+          label="National ID"
+          required
+          hint="Your government-issued identity number (FIN/SSN or equivalent)."
+          value={form.nationalId}
+          onChange={(e) => updateField("nationalId", e.target.value)}
         />
         <Input
           label="Address (optional)"

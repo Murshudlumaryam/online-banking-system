@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   adminService,
+  type AdminCreateCustomerPayload,
   type AuditLogFilters,
   type CreateAccountPayload,
   type CreateCardPayload,
@@ -10,10 +11,10 @@ import {
 } from "@/services/adminService";
 import type { AccountStatus, CustomerStatus, TransactionStatus } from "@/types/api";
 
-export function useAdminCustomers(page: number, status?: CustomerStatus) {
+export function useAdminCustomers(page: number, status?: CustomerStatus, search?: string) {
   return useQuery({
-    queryKey: ["admin", "customers", page, status],
-    queryFn: () => adminService.listCustomers(page, status),
+    queryKey: ["admin", "customers", page, status, search],
+    queryFn: () => adminService.listCustomers(page, status, search),
   });
 }
 
@@ -34,10 +35,10 @@ export function useUpdateCustomerStatus() {
   });
 }
 
-export function useAdminAccounts(page: number, status?: AccountStatus) {
+export function useAdminAccounts(page: number, status?: AccountStatus, search?: string) {
   return useQuery({
-    queryKey: ["admin", "accounts", page, status],
-    queryFn: () => adminService.listAccounts(page, status),
+    queryKey: ["admin", "accounts", page, status, search],
+    queryFn: () => adminService.listAccounts(page, status, search),
   });
 }
 
@@ -90,10 +91,10 @@ export function useBlockCard() {
   });
 }
 
-export function useAdminTransactions(page: number, status?: TransactionStatus) {
+export function useAdminTransactions(page: number, status?: TransactionStatus, search?: string) {
   return useQuery({
-    queryKey: ["admin", "transactions", page, status],
-    queryFn: () => adminService.listTransactions(page, status),
+    queryKey: ["admin", "transactions", page, status, search],
+    queryFn: () => adminService.listTransactions(page, status, search),
   });
 }
 
@@ -124,5 +125,36 @@ export function useCreateExchangeRate() {
   return useMutation({
     mutationFn: (payload: CreateExchangeRatePayload) => adminService.createExchangeRate(payload),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["admin", "exchange-rates"] }),
+  });
+}
+
+export function useAdminCards(page: number, status?: string) {
+  return useQuery({
+    queryKey: ["admin", "cards", page, status],
+    queryFn: () => adminService.listCards(page, status),
+  });
+}
+
+export function useAdminBeneficiaries(page: number) {
+  return useQuery({
+    queryKey: ["admin", "beneficiaries", page],
+    queryFn: () => adminService.listBeneficiaries(page),
+  });
+}
+
+export function useCreateCustomer() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: AdminCreateCustomerPayload) => adminService.createCustomer(payload),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["admin", "customers"] }),
+  });
+}
+
+export function useReverseTransaction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ transactionId, reason }: { transactionId: string; reason: string }) =>
+      adminService.reverseTransaction(transactionId, reason),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["admin", "transactions"] }),
   });
 }

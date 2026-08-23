@@ -33,6 +33,7 @@ async def test_concurrent_duplicate_registration_is_handled_gracefully():
         last_name="Register",
         date_of_birth=date(1990, 1, 1),
         phone_number="+994500000222",
+        national_id=f"TEST{uuid_module.uuid4().hex[:12].upper()}",
     )
     payload_b = RegisterCustomerRequest(
         email=email,  # SAME email — this is the race
@@ -41,6 +42,7 @@ async def test_concurrent_duplicate_registration_is_handled_gracefully():
         last_name="RegisterB",
         date_of_birth=date(1990, 1, 1),
         phone_number="+994500000223",
+        national_id=f"TEST{uuid_module.uuid4().hex[:12].upper()}",
     )
 
     async def _register(p):

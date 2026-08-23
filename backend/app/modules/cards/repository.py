@@ -51,6 +51,23 @@ class CardRepository:
         )
         return list(result.scalars().all())
 
+    async def list_all(
+        self, *, offset: int, limit: int, status=None
+    ) -> tuple[list[Card], int]:
+        """Admin-facing: every card in the system, not scoped to one
+        customer. See app/modules/admin/router.py's GET /admin/cards."""
+        query = select(Card)
+        if status is not None:
+            query = query.where(Card.status == status)
+
+        count_result = await self._session.execute(query.with_only_columns(Card.id))
+        total = len(count_result.all())
+
+        result = await self._session.execute(
+            query.order_by(Card.created_at.desc()).offset(offset).limit(limit)
+        )
+        return list(result.scalars().all()), total
+
     def create(
         self,
         *,

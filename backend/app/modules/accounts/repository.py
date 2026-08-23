@@ -97,11 +97,13 @@ class AccountRepository:
         return totals
 
     async def list_all(
-        self, *, offset: int, limit: int, status: AccountStatus | None = None
+        self, *, offset: int, limit: int, status: AccountStatus | None = None, search: str | None = None
     ) -> tuple[list[Account], int]:
         query = select(Account)
         if status is not None:
             query = query.where(Account.status == status)
+        if search:
+            query = query.where(Account.account_number.ilike(f"%{search}%"))
 
         count_result = await self._session.execute(query.with_only_columns(Account.id))
         total = len(count_result.all())

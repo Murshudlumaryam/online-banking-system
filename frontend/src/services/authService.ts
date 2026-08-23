@@ -9,7 +9,7 @@ export interface RegisterPayload {
   date_of_birth: string;
   phone_number: string;
   address?: string;
-  national_id?: string;
+  national_id: string;
 }
 
 async function unwrap<T>(promise: Promise<{ data?: T; error?: unknown; response: Response }>): Promise<T> {
