@@ -164,6 +164,44 @@ export const adminService = {
     return unwrap(api.POST("/api/v1/admin/customers", { body: payload }));
   },
 
+  async listDeletedCustomers(page: number): Promise<PaginatedResponse<CustomerProfile>> {
+    return unwrap(api.GET("/api/v1/admin/customers/deleted", { params: { query: { page } } }));
+  },
+
+  async deleteCustomer(customerId: string): Promise<void> {
+    await unwrap(
+      api.DELETE("/api/v1/admin/customers/{customer_id}", { params: { path: { customer_id: customerId } } }),
+    );
+  },
+
+  async restoreCustomer(customerId: string): Promise<CustomerProfile> {
+    return unwrap(
+      api.POST("/api/v1/admin/customers/{customer_id}/restore", {
+        params: { path: { customer_id: customerId } },
+      }),
+    );
+  },
+
+  async listDeletedBeneficiaries(page: number): Promise<PaginatedResponse<BeneficiaryResponse>> {
+    return unwrap(api.GET("/api/v1/admin/beneficiaries/deleted", { params: { query: { page } } }));
+  },
+
+  async deleteBeneficiary(beneficiaryId: string): Promise<void> {
+    await unwrap(
+      api.DELETE("/api/v1/admin/beneficiaries/{beneficiary_id}", {
+        params: { path: { beneficiary_id: beneficiaryId } },
+      }),
+    );
+  },
+
+  async restoreBeneficiary(beneficiaryId: string): Promise<BeneficiaryResponse> {
+    return unwrap(
+      api.POST("/api/v1/admin/beneficiaries/{beneficiary_id}/restore", {
+        params: { path: { beneficiary_id: beneficiaryId } },
+      }),
+    );
+  },
+
   async reverseTransaction(transactionId: string, reason: string): Promise<TransactionResponse> {
     return unwrap(
       api.POST("/api/v1/admin/transactions/{transaction_id}/reverse", {

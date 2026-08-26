@@ -59,3 +59,24 @@ class BeneficiaryRepository:
     async def save(self, beneficiary: Beneficiary) -> None:
         self._session.add(beneficiary)
         await self._session.flush()
+
+    async def get_by_id_including_deleted(self, beneficiary_id: uuid.UUID) -> Beneficiary | None:
+        result = await self._session.execute(select(Beneficiary).where(Beneficiary.id == beneficiary_id))
+        return result.scalar_one_or_none()
+
+    async def restore(self, beneficiary: Beneficiary) -> None:
+        beneficiary.status = BeneficiaryStatus.ACTIVE
+        beneficiary.deleted_at = None
+        self._session.add(beneficiary)
+        await self._session.flush()
+
+    async def list_deleted(self, *, offset: int, limit: int) -> tuple[list[Beneficiary], int]:
+        query = select(Beneficiary).where(Beneficiary.status == BeneficiaryStatus.DELETED)
+
+        count_result = await self._session.execute(query.with_only_columns(Beneficiary.id))
+        total = len(count_result.all())
+
+        result = await self._session.execute(
+            query.order_by(Beneficiary.deleted_at.desc()).offset(offset).limit(limit)
+        )
+        return list(result.scalars().all()), total

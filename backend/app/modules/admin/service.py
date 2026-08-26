@@ -1,10 +1,10 @@
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.background_tasks.tasks import send_notification_task, write_audit_log_task
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import ConflictError, NotFoundError
 from app.modules.accounts.models import Account, AccountStatus
 from app.modules.accounts.repository import AccountRepository, generate_account_number
 from app.modules.admin.schemas import (
@@ -16,6 +16,7 @@ from app.modules.admin.schemas import (
     UpdateCustomerStatusRequest,
 )
 from app.modules.audit_logs.repository import AuditLogRepository
+from app.modules.beneficiaries.models import Beneficiary, BeneficiaryStatus
 from app.modules.beneficiaries.repository import BeneficiaryRepository
 from app.modules.cards.models import Card
 from app.modules.cards.repository import CardRepository, generate_synthetic_pan
@@ -299,6 +300,97 @@ class AdminService:
             {"email": payload.email},
         )
         return customer
+
+    # ------------------------------------------------------------------
+    # Soft delete / restore (customers)
+    # ------------------------------------------------------------------
+    async def delete_customer(self, admin_user: User, customer_id: uuid.UUID) -> None:
+        """
+        Soft-deletes a customer — never a physical DELETE, per the same
+        retention rule as cards (see CardService docstrings). The
+        customer's accounts/transactions/ledger history all remain intact
+        and queryable; the customer just stops appearing in normal admin
+        listings (list_customers already filters deleted_at IS NULL) and
+        can no longer log in as themselves in a customer-facing sense
+        (their `Customer` row — the thing every customer-scoped dependency
+        looks up — is gone from view). Does NOT touch their linked `User`
+        row directly; restoring is symmetric and simple (just un-set
+        deleted_at) precisely because nothing else was changed.
+        """
+        customer = await self._customers.get_by_id_including_deleted(customer_id)
+        if customer is None:
+            raise NotFoundError("Customer not found")
+        if customer.deleted_at is not None:
+            raise ConflictError("This customer is already deleted")
+
+        await self._customers.soft_delete(customer)
+        await self._session.commit()
+
+        write_audit_log_task.delay(
+            str(admin_user.id), "ADMIN_CUSTOMER_DELETED", "customer", str(customer_id), None, None
+        )
+
+    async def restore_customer(self, admin_user: User, customer_id: uuid.UUID) -> Customer:
+        customer = await self._customers.get_by_id_including_deleted(customer_id)
+        if customer is None:
+            raise NotFoundError("Customer not found")
+        if customer.deleted_at is None:
+            raise ConflictError("This customer is not deleted")
+
+        await self._customers.restore(customer)
+        await self._session.commit()
+        await self._session.refresh(customer)
+
+        write_audit_log_task.delay(
+            str(admin_user.id), "ADMIN_CUSTOMER_RESTORED", "customer", str(customer_id), None, None
+        )
+        return customer
+
+    async def list_deleted_customers(self, *, page: int, page_size: int):
+        return await self._customers.list_deleted(offset=(page - 1) * page_size, limit=page_size)
+
+    # ------------------------------------------------------------------
+    # Soft delete / restore (beneficiaries)
+    # ------------------------------------------------------------------
+    async def delete_beneficiary(self, admin_user: User, beneficiary_id: uuid.UUID) -> None:
+        """Admin-initiated equivalent of a customer deleting their own
+        beneficiary (see app.modules.beneficiaries.service — that path
+        stays customer-only; this one exists for cases like a fraud
+        investigation where an admin needs to remove a beneficiary the
+        customer didn't or can't remove themselves)."""
+        beneficiary = await self._beneficiaries.get_by_id_including_deleted(beneficiary_id)
+        if beneficiary is None:
+            raise NotFoundError("Beneficiary not found")
+        if beneficiary.status == BeneficiaryStatus.DELETED:
+            raise ConflictError("This beneficiary is already deleted")
+
+        beneficiary.status = BeneficiaryStatus.DELETED
+        beneficiary.deleted_at = datetime.now(timezone.utc)
+        await self._beneficiaries.save(beneficiary)
+        await self._session.commit()
+
+        write_audit_log_task.delay(
+            str(admin_user.id), "ADMIN_BENEFICIARY_DELETED", "beneficiary", str(beneficiary_id), None, None
+        )
+
+    async def restore_beneficiary(self, admin_user: User, beneficiary_id: uuid.UUID) -> Beneficiary:
+        beneficiary = await self._beneficiaries.get_by_id_including_deleted(beneficiary_id)
+        if beneficiary is None:
+            raise NotFoundError("Beneficiary not found")
+        if beneficiary.status != BeneficiaryStatus.DELETED:
+            raise ConflictError("This beneficiary is not deleted")
+
+        await self._beneficiaries.restore(beneficiary)
+        await self._session.commit()
+        await self._session.refresh(beneficiary)
+
+        write_audit_log_task.delay(
+            str(admin_user.id), "ADMIN_BENEFICIARY_RESTORED", "beneficiary", str(beneficiary_id), None, None
+        )
+        return beneficiary
+
+    async def list_deleted_beneficiaries(self, *, page: int, page_size: int):
+        return await self._beneficiaries.list_deleted(offset=(page - 1) * page_size, limit=page_size)
 
     # ------------------------------------------------------------------
     # Transaction reversal

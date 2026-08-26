@@ -166,3 +166,57 @@ export function useReverseTransaction() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["admin", "transactions"] }),
   });
 }
+
+export function useDeletedCustomers(page: number) {
+  return useQuery({
+    queryKey: ["admin", "customers", "deleted", page],
+    queryFn: () => adminService.listDeletedCustomers(page),
+  });
+}
+
+export function useDeleteCustomer() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (customerId: string) => adminService.deleteCustomer(customerId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "customers"] });
+    },
+  });
+}
+
+export function useRestoreCustomer() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (customerId: string) => adminService.restoreCustomer(customerId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "customers"] });
+    },
+  });
+}
+
+export function useDeletedBeneficiaries(page: number) {
+  return useQuery({
+    queryKey: ["admin", "beneficiaries", "deleted", page],
+    queryFn: () => adminService.listDeletedBeneficiaries(page),
+  });
+}
+
+export function useDeleteBeneficiary() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (beneficiaryId: string) => adminService.deleteBeneficiary(beneficiaryId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "beneficiaries"] });
+    },
+  });
+}
+
+export function useRestoreBeneficiary() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (beneficiaryId: string) => adminService.restoreBeneficiary(beneficiaryId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "beneficiaries"] });
+    },
+  });
+}

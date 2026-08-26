@@ -96,3 +96,33 @@ class CustomerRepository:
     async def save(self, customer: Customer) -> None:
         self._session.add(customer)
         await self._session.flush()
+
+    async def get_by_id_including_deleted(self, customer_id: uuid.UUID) -> Customer | None:
+        """Unlike get_by_id, does NOT filter out soft-deleted rows — used
+        by delete/restore themselves, which obviously need to find a
+        customer regardless of its current deleted_at state."""
+        result = await self._session.execute(select(Customer).where(Customer.id == customer_id))
+        return result.scalar_one_or_none()
+
+    async def soft_delete(self, customer: Customer) -> None:
+        from datetime import datetime, timezone
+
+        customer.deleted_at = datetime.now(timezone.utc)
+        self._session.add(customer)
+        await self._session.flush()
+
+    async def restore(self, customer: Customer) -> None:
+        customer.deleted_at = None
+        self._session.add(customer)
+        await self._session.flush()
+
+    async def list_deleted(self, *, offset: int, limit: int) -> tuple[list[Customer], int]:
+        query = select(Customer).where(Customer.deleted_at.is_not(None))
+
+        count_result = await self._session.execute(query.with_only_columns(Customer.id))
+        total = len(count_result.all())
+
+        result = await self._session.execute(
+            query.order_by(Customer.deleted_at.desc()).offset(offset).limit(limit)
+        )
+        return list(result.scalars().all()), total

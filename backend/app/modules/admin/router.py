@@ -72,6 +72,27 @@ async def list_customers(
 
 
 @router.get(
+    "/customers/deleted",
+    response_model=PaginatedResponse[CustomerProfileResponse],
+    summary="List soft-deleted customers (registered before /customers/{customer_id} so 'deleted' isn't parsed as an id)",
+)
+async def list_deleted_customers(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    admin_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+) -> PaginatedResponse[CustomerProfileResponse]:
+    service = AdminService(session)
+    customers, total = await service.list_deleted_customers(page=page, page_size=page_size)
+    return PaginatedResponse[CustomerProfileResponse](
+        items=[CustomerProfileResponse.model_validate(c) for c in customers],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get(
     "/customers/{customer_id}",
     response_model=CustomerProfileResponse,
     summary="Get a customer's profile (admin)",
@@ -83,6 +104,35 @@ async def get_customer(
 ) -> CustomerProfileResponse:
     service = AdminService(session)
     customer = await service.get_customer(customer_id)
+    return CustomerProfileResponse.model_validate(customer)
+
+
+@router.delete(
+    "/customers/{customer_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove a customer (soft delete — history is preserved, restorable)",
+)
+async def delete_customer(
+    customer_id: uuid.UUID,
+    admin_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+) -> None:
+    service = AdminService(session)
+    await service.delete_customer(admin_user, customer_id)
+
+
+@router.post(
+    "/customers/{customer_id}/restore",
+    response_model=CustomerProfileResponse,
+    summary="Restore a previously soft-deleted customer",
+)
+async def restore_customer(
+    customer_id: uuid.UUID,
+    admin_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+) -> CustomerProfileResponse:
+    service = AdminService(session)
+    customer = await service.restore_customer(admin_user, customer_id)
     return CustomerProfileResponse.model_validate(customer)
 
 
@@ -322,6 +372,56 @@ async def list_beneficiaries(
         page=page,
         page_size=page_size,
     )
+
+
+@router.get(
+    "/beneficiaries/deleted",
+    response_model=PaginatedResponse[BeneficiaryResponse],
+    summary="List soft-deleted beneficiaries",
+)
+async def list_deleted_beneficiaries(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    admin_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+) -> PaginatedResponse[BeneficiaryResponse]:
+    service = AdminService(session)
+    beneficiaries, total = await service.list_deleted_beneficiaries(page=page, page_size=page_size)
+    return PaginatedResponse[BeneficiaryResponse](
+        items=[BeneficiaryResponse.model_validate(b) for b in beneficiaries],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.delete(
+    "/beneficiaries/{beneficiary_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove a beneficiary (soft delete — restorable)",
+)
+async def delete_beneficiary(
+    beneficiary_id: uuid.UUID,
+    admin_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+) -> None:
+    service = AdminService(session)
+    await service.delete_beneficiary(admin_user, beneficiary_id)
+
+
+@router.post(
+    "/beneficiaries/{beneficiary_id}/restore",
+    response_model=BeneficiaryResponse,
+    summary="Restore a previously soft-deleted beneficiary",
+)
+async def restore_beneficiary(
+    beneficiary_id: uuid.UUID,
+    admin_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+) -> BeneficiaryResponse:
+    service = AdminService(session)
+    beneficiary = await service.restore_beneficiary(admin_user, beneficiary_id)
+    return BeneficiaryResponse.model_validate(beneficiary)
 
 
 # ----------------------------------------------------------------------
