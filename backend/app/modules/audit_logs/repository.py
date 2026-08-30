@@ -19,6 +19,8 @@ class AuditLogRepository:
         user_id: uuid.UUID | None = None,
         action: str | None = None,
         resource_type: str | None = None,
+        status: str | None = None,
+        request_id: str | None = None,
         created_after: datetime | None = None,
         created_before: datetime | None = None,
     ) -> tuple[list[AuditLog], int]:
@@ -29,6 +31,10 @@ class AuditLogRepository:
             query = query.where(AuditLog.action == action)
         if resource_type is not None:
             query = query.where(AuditLog.resource_type == resource_type)
+        if status is not None:
+            query = query.where(AuditLog.status == status)
+        if request_id is not None:
+            query = query.where(AuditLog.request_id == request_id)
         if created_after is not None:
             query = query.where(AuditLog.created_at >= created_after)
         if created_before is not None:

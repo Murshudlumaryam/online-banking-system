@@ -21,6 +21,9 @@ async def write_audit_log(
     resource_id: uuid.UUID | None = None,
     ip_address: str | None = None,
     metadata: dict | None = None,
+    status: str | None = None,
+    request_id: str | None = None,
+    user_agent: str | None = None,
 ) -> None:
     entry = AuditLog(
         user_id=user_id,
@@ -29,6 +32,9 @@ async def write_audit_log(
         resource_id=resource_id,
         ip_address=ip_address,
         log_metadata=metadata,
+        status=status,
+        request_id=request_id,
+        user_agent=user_agent,
     )
     session.add(entry)
     await session.flush()

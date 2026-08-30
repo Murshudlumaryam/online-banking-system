@@ -163,7 +163,10 @@ export interface AuditLogResponse {
   action: string;
   resource_type: string | null;
   resource_id: string | null;
+  status: string | null;
   ip_address: string | null;
+  user_agent: string | null;
+  request_id: string | null;
   log_metadata: Record<string, unknown> | null;
   created_at: string;
 }

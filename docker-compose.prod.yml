@@ -86,7 +86,7 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
-    command: celery -A app.background_tasks.celery_app worker --loglevel=info --concurrency=2
+    command: celery -A app.background_tasks.celery_app worker --loglevel=info --concurrency=2 -Q celery,audit_queue,notification_queue,default_queue
     networks:
       - banking_network
 

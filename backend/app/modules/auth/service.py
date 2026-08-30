@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.background_tasks.tasks import write_audit_log_task
+from app.background_tasks.tasks import dispatch_audit_log, write_audit_log_task
 from app.core.config import get_settings
 from app.core.crypto import decrypt_secret, encrypt_secret
 from app.core.exceptions import (
@@ -35,6 +35,7 @@ from app.core.security import (
     verify_password_reset_token,
     verify_totp_code,
 )
+from app.modules.audit_logs.actions import AuditAction, AuditStatus
 from app.modules.auth.models import RefreshToken
 from app.modules.auth.repository import RefreshTokenRepository
 from app.modules.auth.schemas import (
@@ -269,6 +270,10 @@ class AuthService:
         if stored_token is not None and self._refresh_tokens.is_valid(stored_token):
             await self._refresh_tokens.revoke(stored_token)
             await self._session.commit()
+            dispatch_audit_log(
+                str(stored_token.user_id), AuditAction.LOGOUT, "user", str(stored_token.user_id),
+                None, None, status=AuditStatus.SUCCESS.value,
+            )
 
     # ------------------------------------------------------------------
     # Password management

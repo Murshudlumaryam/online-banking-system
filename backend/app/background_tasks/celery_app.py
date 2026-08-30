@@ -18,6 +18,25 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
+    # Bug found during an audit-log verification pass: task_routes alone
+    # tells Celery which queue a task *should* go to, but a worker started
+    # without an explicit `-Q` flag only ever consumes the single default
+    # "celery" queue — it never automatically picks up "audit_queue" or
+    # "notification_queue" just because task_routes mentions them. Every
+    # write_audit_log_task/send_notification_task dispatched via .delay()
+    # was landing in a queue nothing was listening to. task_queues below
+    # makes the worker aware of all three queues even when launched with
+    # the plain `celery -A ... worker` command (see docker-compose.yml —
+    # that invocation is now also fixed to pass -Q explicitly, but this
+    # is the actual fix; the -Q flag alone without this would still work,
+    # this is what makes it robust to future invocations that forget it).
+    task_queues={
+        "celery": {"exchange": "celery", "routing_key": "celery"},
+        "audit_queue": {"exchange": "audit_queue", "routing_key": "audit_queue"},
+        "notification_queue": {"exchange": "notification_queue", "routing_key": "notification_queue"},
+        "default_queue": {"exchange": "default_queue", "routing_key": "default_queue"},
+    },
+    task_default_queue="celery",
     task_routes={
         "app.background_tasks.tasks.write_audit_log_task": {"queue": "audit_queue"},
         "app.background_tasks.tasks.send_notification_task": {"queue": "notification_queue"},
@@ -36,3 +55,13 @@ celery_app.conf.update(
         },
     },
 )
+
+# Without this, a worker launched as `celery -A app.background_tasks.celery_app
+# worker` only ever imports *this* module — none of the @celery_app.task
+# decorators in tasks.py execute, so no task is ever registered under this
+# worker's app instance, and every .delay() call for it silently sits in
+# Redis forever ("Received unregistered task" if a message is ever
+# actually delivered to a worker that doesn't have this import). Found the
+# same way as the queue-routing bug above: by actually running a worker
+# and checking its own startup banner listed zero tasks.
+from app.background_tasks import tasks as _tasks  # noqa: E402,F401

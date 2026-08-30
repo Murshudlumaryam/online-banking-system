@@ -17,6 +17,7 @@ import uuid
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.rate_limiter import RateLimiterBackend
+from app.core.request_context import set_request_context
 
 
 class RequestIdMiddleware:
@@ -32,6 +33,8 @@ class RequestIdMiddleware:
         request_id = headers.get(b"x-request-id", b"").decode() or str(uuid.uuid4())
         scope.setdefault("state", {})
         scope["state"]["request_id"] = request_id
+        user_agent = headers.get(b"user-agent", b"").decode() or None
+        set_request_context(request_id, user_agent)
 
         async def send_wrapper(message: Message) -> None:
             if message["type"] == "http.response.start":

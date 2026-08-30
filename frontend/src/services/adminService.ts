@@ -55,6 +55,8 @@ export interface AuditLogFilters {
   user_id?: string;
   action?: string;
   resource_type?: string;
+  status?: string;
+  request_id?: string;
   created_after?: string;
   created_before?: string;
 }

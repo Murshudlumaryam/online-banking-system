@@ -500,6 +500,8 @@ async def list_audit_logs(
     user_id: uuid.UUID | None = Query(default=None),
     action: str | None = Query(default=None),
     resource_type: str | None = Query(default=None),
+    status_filter: str | None = Query(default=None, alias="status"),
+    request_id: str | None = Query(default=None),
     created_after: datetime | None = Query(default=None),
     created_before: datetime | None = Query(default=None),
     admin_user: User = Depends(require_admin),
@@ -512,6 +514,8 @@ async def list_audit_logs(
         user_id=user_id,
         action=action,
         resource_type=resource_type,
+        status=status_filter,
+        request_id=request_id,
         created_after=created_after,
         created_before=created_before,
     )

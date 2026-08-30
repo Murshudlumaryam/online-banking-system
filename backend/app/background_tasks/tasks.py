@@ -13,6 +13,34 @@ from app.modules.audit_logs.service import write_audit_log
 logger = logging.getLogger("app.background_tasks")
 
 
+def dispatch_audit_log(
+    user_id: str | None,
+    action: str,
+    resource_type: str | None = None,
+    resource_id: str | None = None,
+    ip_address: str | None = None,
+    metadata: dict | None = None,
+    status: str | None = None,
+) -> None:
+    """
+    Preferred entry point for new call sites over calling
+    `write_audit_log_task.delay(...)` directly: captures request_id/
+    user_agent from the current request context (see
+    app.core.request_context) *here*, in the web process, before handing
+    off to Celery — see write_audit_log_task's docstring for why that
+    order matters. Existing call sites that already call `.delay()`
+    directly are left as-is (see app/modules/audit_logs/actions.py's
+    module docstring for why this isn't being mechanically retrofitted
+    everywhere at once).
+    """
+    from app.core.request_context import get_current_request_id, get_current_user_agent
+
+    write_audit_log_task.delay(
+        user_id, action, resource_type, resource_id, ip_address, metadata,
+        status=status, request_id=get_current_request_id(), user_agent=get_current_user_agent(),
+    )
+
+
 async def _write_audit_log_async(
     user_id: str | None,
     action: str,
@@ -20,6 +48,9 @@ async def _write_audit_log_async(
     resource_id: str | None,
     ip_address: str | None,
     metadata: dict | None,
+    status: str | None = None,
+    request_id: str | None = None,
+    user_agent: str | None = None,
 ) -> None:
     async with AsyncSessionLocal() as session:
         await write_audit_log(
@@ -30,6 +61,9 @@ async def _write_audit_log_async(
             resource_id=uuid.UUID(resource_id) if resource_id else None,
             ip_address=ip_address,
             metadata=metadata,
+            status=status,
+            request_id=request_id,
+            user_agent=user_agent,
         )
         await session.commit()
 
@@ -42,9 +76,23 @@ def write_audit_log_task(
     resource_id: str | None = None,
     ip_address: str | None = None,
     metadata: dict | None = None,
+    status: str | None = None,
+    request_id: str | None = None,
+    user_agent: str | None = None,
 ) -> None:
+    """
+    request_id/user_agent must be *captured in the calling (web) process*
+    before this reaches `.delay()` — Celery serializes the arguments and
+    re-executes this function in a separate worker process, where
+    app.core.request_context's contextvars are simply unset (a fresh
+    process has no HTTP request in flight). Call sites that don't pass
+    these explicitly get None for them, same as before this field existed.
+    """
     asyncio.run(
-        _write_audit_log_async(user_id, action, resource_type, resource_id, ip_address, metadata)
+        _write_audit_log_async(
+            user_id, action, resource_type, resource_id, ip_address, metadata,
+            status=status, request_id=request_id, user_agent=user_agent,
+        )
     )
 
 

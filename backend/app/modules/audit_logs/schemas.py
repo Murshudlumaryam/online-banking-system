@@ -10,7 +10,10 @@ class AuditLogResponse(BaseModel):
     action: str
     resource_type: str | None
     resource_id: uuid.UUID | None
+    status: str | None
     ip_address: str | None
+    user_agent: str | None
+    request_id: str | None
     log_metadata: dict | None
     created_at: datetime
 

@@ -1063,8 +1063,14 @@ export interface components {
             resource_type: string | null;
             /** Resource Id */
             resource_id: string | null;
+            /** Status */
+            status: string | null;
             /** Ip Address */
             ip_address: string | null;
+            /** User Agent */
+            user_agent: string | null;
+            /** Request Id */
+            request_id: string | null;
             /** Log Metadata */
             log_metadata: Record<string, never> | null;
             /**
@@ -3544,6 +3550,8 @@ export interface operations {
                 user_id?: string | null;
                 action?: string | null;
                 resource_type?: string | null;
+                status?: string | null;
+                request_id?: string | null;
                 created_after?: string | null;
                 created_before?: string | null;
             };

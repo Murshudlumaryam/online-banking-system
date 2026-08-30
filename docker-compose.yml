@@ -133,7 +133,7 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
-    command: celery -A app.background_tasks.celery_app worker --loglevel=info
+    command: celery -A app.background_tasks.celery_app worker --loglevel=info -Q celery,audit_queue,notification_queue,default_queue
     networks:
       - banking_network
 

@@ -4,7 +4,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.background_tasks.tasks import send_notification_task, write_audit_log_task
+from app.background_tasks.tasks import dispatch_audit_log, send_notification_task, write_audit_log_task
 from app.core.config import get_settings
 from app.core.exceptions import (
     AccountNotActiveError,
@@ -23,6 +23,7 @@ from app.core.exceptions import (
 from app.core.security import generate_otp_code, hash_otp_code, verify_otp_code
 from app.modules.accounts.models import AccountStatus
 from app.modules.accounts.repository import AccountRepository
+from app.modules.audit_logs.actions import AuditAction, AuditStatus
 from app.modules.customers.models import Customer
 from app.modules.exchange_rates.repository import ExchangeRateRepository
 from app.modules.ledger_entries.models import LedgerEntryType
@@ -248,6 +249,11 @@ class TransactionService:
             from app.core.metrics import transfers_total
 
             logger.info("TRANSFER_OTP_EXPIRED", extra={"transaction_id": str(transaction.id)})
+            dispatch_audit_log(
+                str(customer.user_id), AuditAction.TRANSFER_FAILED, "transaction", str(transaction.id),
+                None, {"reference_number": transaction.reference_number, "reason": "OTP expired"},
+                status=AuditStatus.FAILED.value,
+            )
             transfers_total.labels(outcome="failed").inc()
             raise OtpExpiredError()
 
@@ -258,6 +264,11 @@ class TransactionService:
 
             logger.warning(
                 "TRANSFER_OTP_MAX_ATTEMPTS_EXCEEDED", extra={"transaction_id": str(transaction.id)}
+            )
+            dispatch_audit_log(
+                str(customer.user_id), AuditAction.TRANSFER_FAILED, "transaction", str(transaction.id),
+                None, {"reference_number": transaction.reference_number, "reason": "too many invalid OTP attempts"},
+                status=AuditStatus.FAILED.value,
             )
             transfers_total.labels(outcome="otp_invalid").inc()
             raise TooManyOtpAttemptsError()
@@ -276,6 +287,12 @@ class TransactionService:
                 await self._session.commit()
                 logger.warning(
                     "TRANSFER_OTP_MAX_ATTEMPTS_EXCEEDED", extra={"transaction_id": str(transaction.id)}
+                )
+                dispatch_audit_log(
+                    str(customer.user_id), AuditAction.TRANSFER_FAILED, "transaction", str(transaction.id),
+                    None,
+                    {"reference_number": transaction.reference_number, "reason": "too many invalid OTP attempts"},
+                    status=AuditStatus.FAILED.value,
                 )
                 transfers_total.labels(outcome="otp_invalid").inc()
                 raise TooManyOtpAttemptsError()
