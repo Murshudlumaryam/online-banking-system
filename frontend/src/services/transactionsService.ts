@@ -24,6 +24,14 @@ export const transactionsService = {
     return unwrap(api.POST("/api/v1/transactions/transfer", { body: payload }));
   },
 
+  async resendOtp(transactionId: string): Promise<{ otp_expires_in_seconds: number; message: string }> {
+    return unwrap(
+      api.POST("/api/v1/transactions/{transaction_id}/resend-otp", {
+        params: { path: { transaction_id: transactionId } },
+      }),
+    );
+  },
+
   async confirmTransfer(transactionId: string, otpCode: string): Promise<TransactionResponse> {
     return unwrap(
       api.POST("/api/v1/transactions/{transaction_id}/confirm", {

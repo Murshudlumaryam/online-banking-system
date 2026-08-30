@@ -67,6 +67,16 @@ class Settings(BaseSettings):
 
     # --- Email (Phase 7) ---
     email_backend: str = Field(default="console")  # "console" (logs only) or "smtp" (real send)
+    # Which channel(s) carry the transfer-confirmation OTP. Previously
+    # hardcoded to "sms" in TransactionService.initiate_transfer, which
+    # meant it could never reach an inbox at all unless Twilio credentials
+    # were configured — a real Gmail address configured via SMTP had no
+    # delivery path whatsoever. "email" is the default because it's the
+    # channel every environment (including a bare `cp .env.example .env`
+    # dev setup) can actually exercise end-to-end without a paid SMS
+    # provider. "sms" and "both" remain available for deployments that do
+    # have Twilio configured.
+    otp_delivery_channel: str = Field(default="email")  # "email" | "sms" | "both"
     smtp_host: str = Field(default="localhost")
     smtp_port: int = Field(default=587)
     smtp_username: str = Field(default="")

@@ -1,3 +1,4 @@
+import logging
 import uuid
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -35,6 +36,7 @@ from app.modules.transactions.schemas import TransferMoneyRequest
 from app.modules.users.models import User
 
 settings = get_settings()
+logger = logging.getLogger("app.otp")
 
 
 class TransactionService:
@@ -136,14 +138,34 @@ class TransactionService:
         )
         await self._session.commit()
 
-        # The OTP is delivered only through the notification channel — it is
-        # never included in the HTTP response and never written to logs.
-        send_notification_task.delay(
-            str(customer.user_id),
-            "sms",
-            "transfer_otp",
-            {"otp_code": otp_code, "reference_number": transaction.reference_number},
+        logger.info(
+            "TRANSFER_OTP_CREATED",
+            extra={
+                "transaction_id": str(transaction.id),
+                "user_id": str(customer.user_id),
+                "expires_in_seconds": expires_in_seconds,
+            },
         )
+
+        # The OTP is delivered only through the notification channel(s)
+        # configured via OTP_DELIVERY_CHANNEL — it is never included in the
+        # HTTP response and never written to logs. Previously hardcoded to
+        # "sms" here, which meant a real SMTP-configured email address had
+        # no delivery path at all; see app/core/config.py's
+        # otp_delivery_channel docstring for the full rationale.
+        channel_setting = settings.otp_delivery_channel
+        channels = ["email", "sms"] if channel_setting == "both" else [channel_setting]
+        for channel in channels:
+            logger.info(
+                "TRANSFER_OTP_SEND_REQUESTED",
+                extra={"transaction_id": str(transaction.id), "channel": channel},
+            )
+            send_notification_task.delay(
+                str(customer.user_id),
+                channel,
+                "transfer_otp",
+                {"otp_code": otp_code, "reference_number": transaction.reference_number},
+            )
         write_audit_log_task.delay(
             str(customer.user_id),
             "TRANSFER_INITIATED",
@@ -153,6 +175,53 @@ class TransactionService:
             {"reference_number": transaction.reference_number},
         )
         return transaction, expires_in_seconds
+
+    async def resend_otp(self, customer: Customer, transaction_id: uuid.UUID) -> int:
+        """
+        Issues a fresh OTP for a PENDING transaction that already has one —
+        e.g. the customer's first email/SMS never arrived, or they simply
+        waited too long. The old code is invalidated the moment this
+        commits (see TransferConfirmationRepository.reissue), and a
+        customer already stuck on max failed attempts gets a clean slate
+        rather than having to abandon the transfer and start over.
+
+        Rate limiting against resend abuse is handled by the standard
+        per-route RateLimitMiddleware (see app/core/middleware.py) applied
+        to this endpoint, the same mechanism every other endpoint in this
+        API uses — no bespoke resend-specific throttle needed here.
+        """
+        transaction = await self._get_owned_pending_transaction(customer, transaction_id)
+        confirmation = await self._confirmations.get_by_transaction_id(transaction.id)
+        if confirmation is None:
+            raise NotFoundError("No OTP challenge found for this transaction")
+
+        otp_code = generate_otp_code()
+        expires_in_seconds = settings.otp_expire_minutes * 60
+        from datetime import datetime, timedelta, timezone
+
+        from app.core import test_otp_store
+
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.otp_expire_minutes)
+        await self._confirmations.reissue(confirmation, otp_code_hash=hash_otp_code(otp_code), expires_at=expires_at)
+        await self._session.commit()
+        test_otp_store.capture(transaction.id, otp_code)
+
+        logger.info("TRANSFER_OTP_RESENT", extra={"transaction_id": str(transaction.id)})
+
+        channel_setting = settings.otp_delivery_channel
+        channels = ["email", "sms"] if channel_setting == "both" else [channel_setting]
+        for channel in channels:
+            logger.info(
+                "TRANSFER_OTP_SEND_REQUESTED",
+                extra={"transaction_id": str(transaction.id), "channel": channel},
+            )
+            send_notification_task.delay(
+                str(customer.user_id),
+                channel,
+                "transfer_otp",
+                {"otp_code": otp_code, "reference_number": transaction.reference_number},
+            )
+        return expires_in_seconds
 
     # ------------------------------------------------------------------
     # Step 2: confirm — verify OTP, then atomically lock both accounts,
@@ -167,6 +236,10 @@ class TransactionService:
 
         confirmation = await self._confirmations.get_by_transaction_id(transaction.id)
         if confirmation is None:
+            logger.warning(
+                "TRANSFER_OTP_VERIFY_FAILED",
+                extra={"transaction_id": str(transaction_id), "reason": "no_challenge_found"},
+            )
             raise NotFoundError("No OTP challenge found for this transaction")
 
         if self._confirmations.is_expired(confirmation):
@@ -174,6 +247,7 @@ class TransactionService:
             await self._session.commit()
             from app.core.metrics import transfers_total
 
+            logger.info("TRANSFER_OTP_EXPIRED", extra={"transaction_id": str(transaction.id)})
             transfers_total.labels(outcome="failed").inc()
             raise OtpExpiredError()
 
@@ -182,6 +256,9 @@ class TransactionService:
             await self._session.commit()
             from app.core.metrics import transfers_total
 
+            logger.warning(
+                "TRANSFER_OTP_MAX_ATTEMPTS_EXCEEDED", extra={"transaction_id": str(transaction.id)}
+            )
             transfers_total.labels(outcome="otp_invalid").inc()
             raise TooManyOtpAttemptsError()
 
@@ -190,16 +267,25 @@ class TransactionService:
             attempts_remaining = confirmation.max_attempts - confirmation.attempts
             from app.core.metrics import transfers_total
 
+            logger.info(
+                "TRANSFER_OTP_INVALID",
+                extra={"transaction_id": str(transaction.id), "attempts_remaining": attempts_remaining},
+            )
             if attempts_remaining <= 0:
                 await self._transactions.mark_failed(transaction, "Too many invalid OTP attempts")
                 await self._session.commit()
+                logger.warning(
+                    "TRANSFER_OTP_MAX_ATTEMPTS_EXCEEDED", extra={"transaction_id": str(transaction.id)}
+                )
                 transfers_total.labels(outcome="otp_invalid").inc()
                 raise TooManyOtpAttemptsError()
             await self._session.commit()
             transfers_total.labels(outcome="otp_invalid").inc()
             raise InvalidOtpError(attempts_remaining)
 
+        logger.info("TRANSFER_OTP_VERIFIED", extra={"transaction_id": str(transaction.id)})
         transaction = await self._execute_locked_transfer(transaction, confirmation=confirmation)
+        logger.info("TRANSFER_COMPLETED", extra={"transaction_id": str(transaction.id)})
 
         write_audit_log_task.delay(
             str(customer.user_id),
@@ -209,9 +295,10 @@ class TransactionService:
             None,
             {"reference_number": transaction.reference_number},
         )
+        completion_channel = "sms" if settings.otp_delivery_channel == "sms" else "email"
         send_notification_task.delay(
             str(customer.user_id),
-            "sms",
+            completion_channel,
             "transfer_completed",
             {"reference_number": transaction.reference_number},
         )
@@ -415,10 +502,41 @@ class TransactionService:
         return transaction
 
     async def _get_owned_pending_transaction(self, customer: Customer, transaction_id) -> Transaction:
+        """
+        Used specifically by confirm_transfer and resend_otp — deliberately
+        stricter than _customer_owns_transaction (sender OR receiver, used
+        for read-only access like viewing/searching a transaction). Only
+        the SENDER authorized this transfer and is the one who received
+        the OTP in the first place; a receiver has no legitimate reason to
+        confirm or resend it.
+        """
         transaction = await self._transactions.get_by_id(transaction_id)
-        if transaction is None or not await self._customer_owns_transaction(customer, transaction):
+        if transaction is None or not await self._customer_is_sender(customer, transaction):
+            # Deliberately the same NotFoundError whether the transaction
+            # genuinely doesn't exist, belongs to someone else entirely, or
+            # exists and belongs to this customer only as its *receiver*
+            # — never confirm to the caller which case it was (see
+            # app.core.exceptions' other "don't reveal existence" uses,
+            # e.g. login's INVALID_CREDENTIALS for both "no such user" and
+            # "wrong password").
+            logger.warning(
+                "TRANSFER_OTP_VERIFY_FAILED",
+                extra={
+                    "transaction_id": str(transaction_id),
+                    "user_id": str(customer.user_id),
+                    "reason": "not_found_or_not_sender",
+                },
+            )
             raise NotFoundError("Transaction not found")
         if transaction.status != TransactionStatus.PENDING:
+            logger.info(
+                "TRANSFER_OTP_VERIFY_FAILED",
+                extra={
+                    "transaction_id": str(transaction_id),
+                    "reason": "already_processed",
+                    "status": transaction.status.value,
+                },
+            )
             raise TransactionAlreadyProcessedError()
         return transaction
 
@@ -432,6 +550,14 @@ class TransactionService:
             if receiver is not None and receiver.customer_id == customer.id:
                 return True
         return False
+
+    async def _customer_is_sender(self, customer: Customer, transaction: Transaction) -> bool:
+        """Stricter than _customer_owns_transaction: True only if `customer`
+        is the account that money is leaving, never the receiver."""
+        if transaction.sender_account_id is None:
+            return False
+        sender = await self._accounts.get_by_id(transaction.sender_account_id)
+        return sender is not None and sender.customer_id == customer.id
 
     async def deposit(
         self,

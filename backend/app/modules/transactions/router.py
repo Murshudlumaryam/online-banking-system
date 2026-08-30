@@ -10,6 +10,7 @@ from app.modules.ledger_entries.schemas import LedgerEntryResponse
 from app.modules.transactions.schemas import (
     ConfirmTransferRequest,
     InitiateTransferResponse,
+    ResendOtpResponse,
     TransactionDetailResponse,
     TransactionResponse,
     TransferMoneyRequest,
@@ -37,6 +38,21 @@ async def initiate_transfer(
         transaction=TransactionResponse.model_validate(transaction),
         otp_expires_in_seconds=expires_in_seconds,
     )
+
+
+@router.post(
+    "/{transaction_id}/resend-otp",
+    response_model=ResendOtpResponse,
+    summary="Resend the OTP for a pending transfer (invalidates the previous code)",
+)
+async def resend_otp(
+    transaction_id: uuid.UUID,
+    customer: Customer = Depends(get_current_customer),
+    session: AsyncSession = Depends(get_db),
+) -> ResendOtpResponse:
+    service = TransactionService(session)
+    expires_in_seconds = await service.resend_otp(customer, transaction_id)
+    return ResendOtpResponse(otp_expires_in_seconds=expires_in_seconds)
 
 
 @router.post(

@@ -432,6 +432,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/transactions/{transaction_id}/resend-otp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resend the OTP for a pending transfer (invalidates the previous code) */
+        post: operations["resend_otp_api_v1_transactions__transaction_id__resend_otp_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/transactions/{transaction_id}/confirm": {
         parameters: {
             query?: never;
@@ -1519,6 +1536,16 @@ export interface components {
             email: string;
             customer: components["schemas"]["CustomerSummary"];
         };
+        /** ResendOtpResponse */
+        ResendOtpResponse: {
+            /** Otp Expires In Seconds */
+            otp_expires_in_seconds: number;
+            /**
+             * Message
+             * @default A new OTP has been sent. The previous code no longer works.
+             */
+            message: string;
+        };
         /** ReverseTransactionRequest */
         ReverseTransactionRequest: {
             /** Reason */
@@ -2504,6 +2531,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InitiateTransferResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resend_otp_api_v1_transactions__transaction_id__resend_otp_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                transaction_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResendOtpResponse"];
                 };
             };
             /** @description Validation Error */

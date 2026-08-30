@@ -121,3 +121,8 @@ class InitiateTransferResponse(BaseModel):
     transaction: TransactionResponse
     otp_expires_in_seconds: int
     message: str = "An OTP has been sent to confirm this transfer."
+
+
+class ResendOtpResponse(BaseModel):
+    otp_expires_in_seconds: int
+    message: str = "A new OTP has been sent. The previous code no longer works."

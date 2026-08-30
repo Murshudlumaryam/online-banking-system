@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 
 import { useAccounts } from "@/hooks/useAccounts";
 import { useBeneficiaries } from "@/hooks/useBeneficiaries";
-import { useConfirmTransfer, useInitiateTransfer } from "@/hooks/useTransactions";
+import { useConfirmTransfer, useInitiateTransfer, useResendOtp } from "@/hooks/useTransactions";
 import { getApiErrorCode, getApiErrorMessage } from "@/lib/apiClient";
 import { formatMoney } from "@/lib/format";
 import type { InitiateTransferResponse } from "@/types/api";
@@ -29,9 +29,11 @@ export function TransferPage() {
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [pendingTransfer, setPendingTransfer] = useState<InitiateTransferResponse | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [resendMessage, setResendMessage] = useState<string | null>(null);
 
   const initiateTransfer = useInitiateTransfer();
   const confirmTransfer = useConfirmTransfer();
+  const resendOtp = useResendOtp();
 
   const activeAccounts = (accounts ?? []).filter((a) => a.status === "ACTIVE");
   const selectedAccount = activeAccounts.find((a) => a.id === senderAccountId);
@@ -82,6 +84,19 @@ export function TransferPage() {
       } else {
         setConfirmError(message);
       }
+    }
+  }
+
+  async function handleResend() {
+    if (!pendingTransfer) return;
+    setResendMessage(null);
+    setConfirmError(null);
+    try {
+      const result = await resendOtp.mutateAsync(pendingTransfer.transaction.id);
+      setPendingTransfer({ ...pendingTransfer, otp_expires_in_seconds: result.otp_expires_in_seconds });
+      setResendMessage("A new code is on its way.");
+    } catch (err) {
+      setConfirmError(getApiErrorMessage(err, "Couldn't resend the code."));
     }
   }
 
@@ -155,9 +170,13 @@ export function TransferPage() {
           isSubmitting={confirmTransfer.isPending}
           errorMessage={confirmError}
           onConfirm={handleConfirm}
+          onResend={() => void handleResend()}
+          isResending={resendOtp.isPending}
+          resendMessage={resendMessage}
           onCancel={() => {
             setPendingTransfer(null);
             setConfirmError(null);
+            setResendMessage(null);
           }}
         />
       )}

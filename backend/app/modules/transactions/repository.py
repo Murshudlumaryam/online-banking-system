@@ -190,6 +190,22 @@ class TransferConfirmationRepository:
         confirmation.attempts += 1
         self._session.add(confirmation)
 
+    async def reissue(
+        self, confirmation: TransferConfirmation, *, otp_code_hash: str, expires_at: datetime
+    ) -> None:
+        """
+        Resend: replaces the code and expiry on the *same* confirmation row
+        (transaction_id stays UNIQUE — there is still exactly one
+        confirmation per transaction) and resets the attempt counter, since
+        those failed attempts were against a code that no longer exists.
+        The old code becomes unconditionally unusable the instant this
+        commits, even if the customer still has it sitting in an old email.
+        """
+        confirmation.otp_code_hash = otp_code_hash
+        confirmation.expires_at = expires_at
+        confirmation.attempts = 0
+        self._session.add(confirmation)
+
     async def mark_verified(self, confirmation: TransferConfirmation) -> None:
         confirmation.verified_at = datetime.now(timezone.utc)
         self._session.add(confirmation)

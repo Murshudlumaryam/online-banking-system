@@ -50,6 +50,211 @@ async def _register_second_customer(client: AsyncClient, email: str) -> dict:
 
 
 @pytest.mark.asyncio
+async def test_transfer_otp_is_delivered_via_email_by_default(
+    client: AsyncClient, db_session, registered_customer: dict, unique_email: str, stub_background_tasks
+):
+    """
+    Regression test for a real bug found during an OTP-delivery audit:
+    initiate_transfer used to hardcode the "sms" channel for the transfer
+    OTP, which meant a customer with only a real (SMTP-configured) email
+    address had no delivery path for it at all — see
+    app/core/config.py's otp_delivery_channel docstring. The default is
+    now "email"; this locks that in.
+    """
+    sender_customer = registered_customer["customer"]
+    sender = await _make_active_account(db_session, sender_customer.id, "TXNOTP01", "AZN", "500.00")
+
+    other_email = f"receiver_{unique_email}"
+    await _register_second_customer(client, other_email)
+    from sqlalchemy import select
+
+    from app.modules.customers.models import Customer
+    from app.modules.users.models import User
+
+    result = await db_session.execute(
+        select(Customer).join(User, User.id == Customer.user_id).where(User.email == other_email.lower())
+    )
+    receiver_customer = result.scalar_one()
+    await _make_active_account(db_session, receiver_customer.id, "TXNOTP02", "AZN", "0.00")
+
+    initiate = await client.post(
+        "/api/v1/transactions/transfer",
+        json={
+            "sender_account_id": str(sender.id),
+            "receiver_account_number": "TXNOTP02",
+            "amount": "10.00",
+            "currency": "AZN",
+        },
+        headers=registered_customer["headers"],
+    )
+    assert initiate.status_code == 201
+
+    otp_calls = [
+        args for name, args in stub_background_tasks
+        if name == "send_notification_task" and args[2] == "transfer_otp"
+    ]
+    assert len(otp_calls) == 1, f"expected exactly one OTP notification dispatch, got {len(otp_calls)}"
+    channel = otp_calls[0][1]
+    assert channel == "email", f"transfer OTP was dispatched via {channel!r}, expected 'email'"
+
+
+@pytest.mark.asyncio
+async def test_resend_otp_invalidates_the_previous_code(
+    client: AsyncClient, db_session, registered_customer: dict, unique_email: str, stub_background_tasks
+):
+    sender_customer = registered_customer["customer"]
+    sender = await _make_active_account(db_session, sender_customer.id, "TXNRSD01", "AZN", "500.00")
+
+    other_email = f"receiver_{unique_email}"
+    await _register_second_customer(client, other_email)
+    from sqlalchemy import select
+
+    from app.modules.customers.models import Customer
+    from app.modules.users.models import User
+
+    result = await db_session.execute(
+        select(Customer).join(User, User.id == Customer.user_id).where(User.email == other_email.lower())
+    )
+    receiver_customer = result.scalar_one()
+    await _make_active_account(db_session, receiver_customer.id, "TXNRSD02", "AZN", "0.00")
+
+    initiate = await client.post(
+        "/api/v1/transactions/transfer",
+        json={
+            "sender_account_id": str(sender.id),
+            "receiver_account_number": "TXNRSD02",
+            "amount": "10.00",
+            "currency": "AZN",
+        },
+        headers=registered_customer["headers"],
+    )
+    transaction_id = initiate.json()["transaction"]["id"]
+    original_otp = _extract_otp(stub_background_tasks)
+
+    resend = await client.post(
+        f"/api/v1/transactions/{transaction_id}/resend-otp", headers=registered_customer["headers"]
+    )
+    assert resend.status_code == 200
+    assert resend.json()["otp_expires_in_seconds"] > 0
+
+    new_otp_calls = [
+        args for name, args in stub_background_tasks
+        if name == "send_notification_task" and args[2] == "transfer_otp"
+    ]
+    assert len(new_otp_calls) == 2, "expected the original send plus one resend"
+    new_otp = new_otp_calls[-1][3]["otp_code"]
+    assert new_otp != original_otp, "resend must issue a genuinely new code, not repeat the old one"
+
+    old_code_attempt = await client.post(
+        f"/api/v1/transactions/{transaction_id}/confirm",
+        json={"otp_code": original_otp},
+        headers=registered_customer["headers"],
+    )
+    assert old_code_attempt.status_code in (400, 401, 422), (
+        f"expected the invalidated old OTP to be rejected, got {old_code_attempt.status_code}"
+    )
+
+    new_code_attempt = await client.post(
+        f"/api/v1/transactions/{transaction_id}/confirm",
+        json={"otp_code": new_otp},
+        headers=registered_customer["headers"],
+    )
+    assert new_code_attempt.status_code == 200
+    assert new_code_attempt.json()["status"] == "SUCCESS"
+
+
+@pytest.mark.asyncio
+async def test_resend_otp_resets_the_attempt_counter(
+    client: AsyncClient, db_session, registered_customer: dict, unique_email: str, stub_background_tasks
+):
+    sender_customer = registered_customer["customer"]
+    sender = await _make_active_account(db_session, sender_customer.id, "TXNRSD03", "AZN", "500.00")
+
+    other_email = f"receiver2_{unique_email}"
+    await _register_second_customer(client, other_email)
+    from sqlalchemy import select
+
+    from app.modules.customers.models import Customer
+    from app.modules.users.models import User
+
+    result = await db_session.execute(
+        select(Customer).join(User, User.id == Customer.user_id).where(User.email == other_email.lower())
+    )
+    receiver_customer = result.scalar_one()
+    await _make_active_account(db_session, receiver_customer.id, "TXNRSD04", "AZN", "0.00")
+
+    initiate = await client.post(
+        "/api/v1/transactions/transfer",
+        json={
+            "sender_account_id": str(sender.id),
+            "receiver_account_number": "TXNRSD04",
+            "amount": "10.00",
+            "currency": "AZN",
+        },
+        headers=registered_customer["headers"],
+    )
+    transaction_id = initiate.json()["transaction"]["id"]
+
+    for _ in range(3):
+        await client.post(
+            f"/api/v1/transactions/{transaction_id}/confirm",
+            json={"otp_code": "000000"},
+            headers=registered_customer["headers"],
+        )
+
+    await client.post(f"/api/v1/transactions/{transaction_id}/resend-otp", headers=registered_customer["headers"])
+    otp_calls = [
+        args for name, args in stub_background_tasks
+        if name == "send_notification_task" and args[2] == "transfer_otp"
+    ]
+    new_otp = otp_calls[-1][3]["otp_code"]
+
+    confirm = await client.post(
+        f"/api/v1/transactions/{transaction_id}/confirm",
+        json={"otp_code": new_otp},
+        headers=registered_customer["headers"],
+    )
+    assert confirm.status_code == 200, "a fresh OTP after resend should have a full new attempt budget"
+
+
+@pytest.mark.asyncio
+async def test_cannot_resend_otp_for_someone_elses_transaction(
+    client: AsyncClient, db_session, registered_customer: dict, unique_email: str, stub_background_tasks
+):
+    sender_customer = registered_customer["customer"]
+    sender = await _make_active_account(db_session, sender_customer.id, "TXNRSD05", "AZN", "500.00")
+
+    other_email = f"receiver3_{unique_email}"
+    other_tokens = await _register_second_customer(client, other_email)
+    from sqlalchemy import select
+
+    from app.modules.customers.models import Customer
+    from app.modules.users.models import User
+
+    result = await db_session.execute(
+        select(Customer).join(User, User.id == Customer.user_id).where(User.email == other_email.lower())
+    )
+    receiver_customer = result.scalar_one()
+    await _make_active_account(db_session, receiver_customer.id, "TXNRSD06", "AZN", "0.00")
+
+    initiate = await client.post(
+        "/api/v1/transactions/transfer",
+        json={
+            "sender_account_id": str(sender.id),
+            "receiver_account_number": "TXNRSD06",
+            "amount": "10.00",
+            "currency": "AZN",
+        },
+        headers=registered_customer["headers"],
+    )
+    transaction_id = initiate.json()["transaction"]["id"]
+
+    other_headers = {"Authorization": f"Bearer {other_tokens['access_token']}"}
+    response = await client.post(f"/api/v1/transactions/{transaction_id}/resend-otp", headers=other_headers)
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_same_currency_transfer_end_to_end(
     client: AsyncClient, db_session, registered_customer: dict, unique_email: str, stub_background_tasks
 ):

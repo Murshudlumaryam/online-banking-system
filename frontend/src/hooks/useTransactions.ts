@@ -23,6 +23,12 @@ export function useInitiateTransfer() {
   });
 }
 
+export function useResendOtp() {
+  return useMutation({
+    mutationFn: (transactionId: string) => transactionsService.resendOtp(transactionId),
+  });
+}
+
 export function useConfirmTransfer() {
   const queryClient = useQueryClient();
   return useMutation({

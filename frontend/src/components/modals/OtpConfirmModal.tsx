@@ -12,6 +12,9 @@ interface OtpConfirmModalProps {
   errorMessage: string | null;
   onConfirm: (otpCode: string) => void;
   onCancel: () => void;
+  onResend?: () => void;
+  isResending?: boolean;
+  resendMessage?: string | null;
 }
 
 export function OtpConfirmModal({
@@ -21,9 +24,16 @@ export function OtpConfirmModal({
   errorMessage,
   onConfirm,
   onCancel,
+  onResend,
+  isResending = false,
+  resendMessage = null,
 }: OtpConfirmModalProps) {
   const [otpCode, setOtpCode] = useState("");
   const [secondsLeft, setSecondsLeft] = useState(expiresInSeconds);
+
+  useEffect(() => {
+    setSecondsLeft(expiresInSeconds);
+  }, [expiresInSeconds]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -51,6 +61,7 @@ export function OtpConfirmModal({
 
         <form className="mt-5 flex flex-col gap-4" onSubmit={handleSubmit}>
           {errorMessage && <ErrorBanner message={errorMessage} />}
+          {resendMessage && <p className="text-sm text-forest-600">{resendMessage}</p>}
           <Input
             label="One-time code"
             inputMode="numeric"
@@ -61,6 +72,16 @@ export function OtpConfirmModal({
             hint={isExpired ? "This code has expired." : `Expires in ${minutes}:${seconds.toString().padStart(2, "0")}`}
             disabled={isExpired}
           />
+          {onResend && (
+            <button
+              type="button"
+              className="self-start text-sm font-medium text-ledger-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-slate-400 disabled:no-underline"
+              onClick={onResend}
+              disabled={isResending || (!isExpired && secondsLeft > expiresInSeconds - 30)}
+            >
+              {isResending ? "Sending a new code…" : "Didn't get a code? Resend"}
+            </button>
+          )}
           <div className="flex gap-3">
             <Button
               type="submit"
