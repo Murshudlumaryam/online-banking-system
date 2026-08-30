@@ -65,3 +65,19 @@ celery_app.conf.update(
 # same way as the queue-routing bug above: by actually running a worker
 # and checking its own startup banner listed zero tasks.
 from app.background_tasks import tasks as _tasks  # noqa: E402,F401
+
+# A second, related import-order bug found the same way (running a real
+# worker under load, not by reading code): several models declare
+# relationships using a *string* class name (e.g. User -> "Customer") to
+# avoid circular imports between modules. SQLAlchemy only resolves those
+# strings against whatever classes have actually been imported somewhere
+# in the process. tasks.py only imports the couple of modules it directly
+# needs (audit_logs, mostly) — it never imports customers/accounts/etc. —
+# so the very first time this worker process touched the User mapper (via
+# write_audit_log_task, unrelated to Customer at all), SQLAlchemy tried to
+# resolve "Customer" and failed, because nothing had imported that module
+# yet in this process. app.db.models_registry (already used by
+# alembic/env.py for the same underlying reason — populating
+# Base.metadata) imports every model module for exactly this kind of
+# side effect.
+from app.db import models_registry as _models_registry  # noqa: E402,F401

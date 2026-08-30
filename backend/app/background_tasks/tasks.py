@@ -7,7 +7,7 @@ import logging
 import uuid
 
 from app.background_tasks.celery_app import celery_app
-from app.db.session import AsyncSessionLocal
+from app.db.session import CelerySessionLocal
 from app.modules.audit_logs.service import write_audit_log
 
 logger = logging.getLogger("app.background_tasks")
@@ -52,7 +52,7 @@ async def _write_audit_log_async(
     request_id: str | None = None,
     user_agent: str | None = None,
 ) -> None:
-    async with AsyncSessionLocal() as session:
+    async with CelerySessionLocal() as session:
         await write_audit_log(
             session,
             user_id=uuid.UUID(user_id) if user_id else None,
@@ -141,7 +141,7 @@ def _render_template(body_template: str, context: dict) -> str:
 async def _send_notification_async(user_id: str, channel: str, template: str, context: dict) -> None:
     import uuid as uuid_module
 
-    async with AsyncSessionLocal() as session:
+    async with CelerySessionLocal() as session:
         from app.modules.users.repository import UserRepository
 
         user = await UserRepository(session).get_by_id(uuid_module.UUID(user_id))
@@ -203,7 +203,7 @@ async def _expire_stale_transactions_async() -> int:
     from app.modules.transactions.repository import TransactionRepository
 
     expired_count = 0
-    async with AsyncSessionLocal() as session:
+    async with CelerySessionLocal() as session:
         now = datetime.now(timezone.utc)
         result = await session.execute(
             select(Transaction, TransferConfirmation)
@@ -240,7 +240,7 @@ async def _execute_scheduled_payments_async() -> dict:
     from app.modules.transactions.service import TransactionService
 
     executed, failed = 0, 0
-    async with AsyncSessionLocal() as session:
+    async with CelerySessionLocal() as session:
         schedules_repo = ScheduledPaymentRepository(session)
         customers_repo = CustomerRepository(session)
         transaction_service = TransactionService(session)

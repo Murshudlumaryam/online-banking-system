@@ -8,7 +8,7 @@ from app.modules.audit_logs.models import AuditLog
 @pytest.mark.asyncio
 async def test_write_audit_log_async_persists_entry(db_session, monkeypatch):
     """
-    The Celery task itself opens its own session via AsyncSessionLocal, which
+    The Celery task itself opens its own session via CelerySessionLocal, which
     would bypass our test's transaction-rollback isolation. We instead verify
     the underlying write_audit_log() call directly through our test session —
     the task wrapper (_write_audit_log_async) is exercised for its argument
@@ -44,7 +44,7 @@ async def test_write_audit_log_async_handles_none_ids():
     login attempts against an unknown email, where no user_id exists yet)."""
     from unittest.mock import AsyncMock, patch
 
-    with patch("app.background_tasks.tasks.AsyncSessionLocal") as mock_session_local:
+    with patch("app.background_tasks.tasks.CelerySessionLocal") as mock_session_local:
         mock_session = AsyncMock()
         mock_session_local.return_value.__aenter__.return_value = mock_session
 
@@ -62,7 +62,7 @@ async def test_expire_stale_transactions_marks_expired_pending_as_failed(db_sess
     Exercises the same query/update logic `expire_stale_transactions_task`
     uses, run against our session directly so it participates in the test's
     rollback isolation (the real task opens its own session via
-    AsyncSessionLocal, which would bypass that isolation).
+    CelerySessionLocal, which would bypass that isolation).
     """
     import uuid
     from datetime import date, datetime, timedelta, timezone
@@ -153,7 +153,7 @@ async def test_expire_stale_transactions_marks_expired_pending_as_failed(db_sess
 @pytest.mark.asyncio
 async def test_send_notification_renders_known_template_and_calls_provider():
     """
-    _send_notification_async opens its own connection via AsyncSessionLocal
+    _send_notification_async opens its own connection via CelerySessionLocal
     (by design — see module docstring), which is a different connection than
     the rollback-isolated `db_session` fixture uses. A user created through
     `db_session` would be invisible to it (uncommitted from Postgres's point

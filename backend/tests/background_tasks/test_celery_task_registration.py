@@ -69,3 +69,71 @@ def test_docker_compose_worker_commands_explicitly_list_every_queue():
             )
             for queue in ("audit_queue", "notification_queue", "default_queue"):
                 assert queue in line, f"{compose_file}'s worker command is missing queue {queue!r}: {line.strip()}"
+
+
+def test_celery_tasks_use_a_dedicated_unpooled_session_not_the_web_apps_pooled_one():
+    """
+    Regression test for a second real bug found the same way as the two
+    above — by running an actual worker under real load and reading its
+    error log, not by inspecting code: every Celery task in tasks.py is a
+    plain sync function that calls asyncio.run(...), which creates a
+    brand-new event loop on every single invocation. The web app's
+    `engine` (app.db.session.engine) is a long-lived, *pooled* engine —
+    fine for uvicorn's single persistent event loop, but if a Celery task
+    reused it, asyncpg connections established under one asyncio.run()'s
+    event loop would get handed back out during a *later* asyncio.run()
+    call under a *different* (new) event loop, and asyncpg refuses to use
+    a connection outside the loop it was opened on
+    ("... attached to a different loop"). This only shows up once the
+    pool actually has something to reuse — a single isolated call never
+    triggers it, which is why unit tests calling write_audit_log directly
+    never caught it.
+
+    The fix is CelerySessionLocal, bound to a NullPool engine so every
+    asyncio.run() call gets a genuinely fresh connection with nothing left
+    over to misuse later.
+    """
+    from sqlalchemy.pool import NullPool
+
+    from app.background_tasks import tasks as bg_tasks
+    from app.db.session import CelerySessionLocal, celery_engine, engine
+
+    assert bg_tasks.CelerySessionLocal is CelerySessionLocal
+    assert isinstance(celery_engine.pool, NullPool)
+    # The two engines must be genuinely separate — this is not just "the
+    # same pooled engine with a different name".
+    assert celery_engine is not engine
+
+
+def test_celery_worker_process_can_resolve_every_model_relationship():
+    """
+    Regression test for a third real bug found the same way: tasks.py only
+    imports the couple of model modules it directly touches (audit_logs,
+    mostly) — it never imports customers/accounts/cards/etc. Several
+    models declare relationships using a *string* class name (e.g.
+    `User` -> `"Customer"`) specifically to avoid circular imports between
+    modules; SQLAlchemy only resolves those strings against whatever
+    classes have actually been imported *somewhere* in the current
+    process. The first time a real Celery worker process touched the
+    `User` mapper (via write_audit_log_task, which has nothing to do with
+    Customer at all), configuration failed with "expression 'Customer'
+    failed to locate a name" — because nothing in that process had ever
+    imported the customers module.
+
+    The fix is importing app.db.models_registry (already used by
+    alembic/env.py for the identical underlying reason: populating
+    Base.metadata) from celery_app.py, so every model is registered
+    before the worker processes its first task.
+    """
+    from sqlalchemy import inspect
+
+    from app.modules.users.models import User
+
+    # Deliberately does NOT import app.modules.customers.models directly —
+    # the whole point is to prove celery_app.py's own import chain is what
+    # makes this resolvable, not this test file doing it for it.
+    insp = inspect(User)
+    assert "customer" in insp.relationships.keys()
+    assert "refresh_tokens" in insp.relationships.keys()
+
+

@@ -34,3 +34,4 @@ banking-backups/
 .vscode/
 .idea/
 .DS_Store
+*.rdb
