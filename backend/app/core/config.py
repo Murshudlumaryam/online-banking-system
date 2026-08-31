@@ -95,6 +95,16 @@ class Settings(BaseSettings):
 
     # --- CORS ---
     cors_allow_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
+    # Whether to trust X-Forwarded-For for the client IP recorded in audit
+    # logs (login/register/refresh/MFA events). Defaults to False — a
+    # request handled directly (no reverse proxy in front) can set this
+    # header to anything, and honoring it unconditionally lets an attacker
+    # poison the audit trail with a fake IP. Only enable this when the app
+    # is deployed behind a reverse proxy that is known to strip/overwrite
+    # any client-supplied X-Forwarded-For before setting its own (this
+    # project's Caddyfile does, for the production deployment path) — see
+    # app.modules.auth.dependencies.get_client_ip.
+    trust_proxy_headers: bool = Field(default=False)
 
     # --- Observability (Phase 9) ---
     metrics_enabled: bool = Field(default=True)

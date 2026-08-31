@@ -14,9 +14,26 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def get_client_ip(request: Request) -> str | None:
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    """
+    Used for the ip_address recorded on login/register/refresh/MFA audit
+    events. X-Forwarded-For is only honored when TRUST_PROXY_HEADERS is
+    explicitly enabled (see app.core.config's docstring on that setting).
+
+    Even then, this takes the *last* comma-separated value, not the
+    first: a reverse proxy that simply appends to whatever X-Forwarded-For
+    a client already sent (Caddy's default behavior — it does not strip
+    or overwrite the header unless `trusted_proxies` is configured) means
+    the first entry is still fully attacker-controlled. The last entry is
+    the one the immediate, trusted proxy itself appended from the real
+    TCP connection it saw, which is the only part of this header this
+    single-hop deployment can actually vouch for.
+    """
+    from app.core.config import get_settings
+
+    if get_settings().trust_proxy_headers:
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            return forwarded.split(",")[-1].strip()
     return request.client.host if request.client else None
 
 

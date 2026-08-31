@@ -5,26 +5,52 @@
 ```
 Overall Status: READY
 
-Critical Issues found this pass: 2 (both fixed and re-verified)
+Critical Issues found across both verification passes: 3 (all fixed and re-verified)
 Major Issues: 0
 Minor Issues: 0
 ```
 
-Bu turda **2 yeni kritik, əvvəllər tamamilə gizli qalan bug** tapıldı — hər ikisi yalnız **real server + real Celery worker eyni vaxtda** işlədilərək aşkar edildi (əvvəlki turlarda yalnız `.delay()` çağırışının uğurlu olması yoxlanılmışdı, real worker prosesi ilə sınanmamışdı):
+**Bu sənəd iki ardıcıl doğrulama turunun birləşmiş nəticəsidir.** Birinci tur 2 kritik Celery bug-ı tapdı (aşağıda). İkinci, son tur əlavə real testlər apardı (konkurrensiya, user ID spoofing, timestamp ardıcıllığı, production konfiqurasiya auditi) və **3-cü bir real təhlükəsizlik boşluğu** tapdı:
 
-### Bug A: `asyncio.run()` + paylaşılan pooled engine → "attached to a different loop"
-Hər Celery tapşırığı (`write_audit_log_task`, `send_notification_task`, `expire_stale_transactions_task`, `execute_scheduled_payments_task`) `asyncio.run(...)` çağırır — bu, HƏR DƏFƏ yeni event loop yaradır. Amma bu tapşırıqlar `app.db.session.AsyncSessionLocal`-ı (web tətbiqi ilə **paylaşılan**, connection pool-lu) istifadə edirdi. Pool-dan qayıdan bağlantı əvvəlki (artıq bağlanmış) event loop-a bağlı olduğu üçün, sonrakı `asyncio.run()` çağırışı `RuntimeError: ... attached to a different loop` xətası verirdi — **təsadüfi, yalnız pool-da nəsə yenidən istifadə ediləndə**.
+### Bug C (2-ci turda tapıldı): IP spoofing audit trail-də
+`get_client_ip()` hər hansı client-in göndərdiyi `X-Forwarded-For` header-inə **kor-koranə etibar edirdi** — trusted proxy yoxlaması yox idi. İstənilən client saxta IP göndərib audit log-u "poison" edə bilərdi.
 
-**Düzəliş:** `app/db/session.py`-də ayrıca, `NullPool` istifadə edən `celery_engine`/`CelerySessionLocal` yaradıldı. Hər Celery tapşırığı indi tam təzə, heç vaxt paylaşılmayan bağlantı alır.
+**Düzəliş:** Yeni `TRUST_PROXY_HEADERS` sazlaması (default `False`). Aktiv olduqda belə, header-in **son** (ilk yox) hissəsini götürür — çünki Caddy (bu layihənin reverse proxy-si) default olaraq X-Forwarded-For-u **əlavə edir, əvəz etmir**; ilk dəyər hələ də client tərəfindən saxtalaşdırıla bilər, son dəyər isə Caddy-nin özünün müşahidə etdiyi həqiqi bağlantıdır. 4 yeni test yazıldı, hamısı keçdi.
 
-### Bug B: Celery worker prosesi bütün SQLAlchemy modellərini import etmirdi
-`User` modeli `relationship("Customer", ...)` istifadə edir (string-based, circular import-un qarşısını almaq üçün). Celery worker prosesi yalnız `tasks.py`-nin bilavasitə ehtiyac duyduğu modulları import edirdi (`audit_logs` və s.) — `customers` modulu heç vaxt yüklənmirdi. Nəticə: worker `write_audit_log_task`-ı ilk dəfə icra edəndə (`User` mapper-ə toxunanda) `InvalidRequestError: ... failed to locate a name ('Customer')` xətası verirdi.
-
-**Düzəliş:** `celery_app.py`-yə artıq mövcud olan `app.db.models_registry` (Alembic-in də istifadə etdiyi, bütün modelləri import edən modul) əlavə edildi.
-
-**Hər iki bug real, təkrarlanan E2E testlə (server+worker) düzəlişdən əvvəl/sonra sübut edildi.**
+### Bug A və B (1-ci turda tapıldı, xatırlatma)
+Aşağıda, əvvəlki bölmələrdə tam təsvir olunub: Celery-nin `asyncio.run()` + paylaşılan connection pool problemi, və worker prosesinin bütün SQLAlchemy modellərini import etməməsi.
 
 ---
+
+## 1B. Bu Son Turda Əlavə Edilən Real Testlər
+
+```
+Konkurrensiya testi (Mərhələ 32): PASS
+  5 paralel qeydiyyat → real DB-də 5 fərqli, düzgün user_id, 0 qarışma/itki
+  (real server + real worker, --concurrency=4)
+
+User ID Spoofing (Mərhələ 21): PASS
+  Kod auditı: heç bir audit çağırışı client payload-dan user_id götürmür
+  (grep: "payload.user_id" və bənzərləri — 0 nəticə)
+
+Timestamp/Timezone (Mərhələ 30): PASS
+  created_at sütunu DateTime(timezone=True) — Postgres UTC-də saxlayır,
+  timezone qeyri-müəyyənliyi yoxdur. Əvvəlki canlı testlərdə də düzgün
+  xronoloji ardıcıllıq müşahidə edildi (REGISTER → LOGIN → LOGOUT)
+
+Production Config Auditi (Mərhələ 38): PASS (1 real problem tapılıb düzəldi)
+  - docker-compose celery əmrləri: -Q bayrağı düzgün (əvvəlki turda düzəldi)
+  - CORS: wildcard qadağandır (kod səviyyəsində qoruma var)
+  - Trusted proxy: 🔴 REAL PROBLEM tapıldı və düzəldildi (yuxarıda, Bug C)
+
+Action Coverage Auditi (Mərhələ 41): PASS
+  38 mərkəzləşdirilmiş action tapıldı, 3-ü siyahıda əskik idi
+  (ADMIN_ACCOUNT_STATUS_CHANGED, ADMIN_CUSTOMER_STATUS_CHANGED,
+  SCHEDULED_PAYMENT_CREATED) — əlavə edildi
+```
+
+---
+
 
 ## 2. Database
 
@@ -103,7 +129,7 @@ Authorization: PASS
 ## 9. Tests
 
 ```
-Backend: PASS — 238/238 (əvvəlki 236 + 2 yeni regression test bu turda)
+Backend: PASS — 242/242 (əvvəlki 238 + 4 yeni test bu son turda: get_client_ip spoofing qorunması)
 Frontend: PASS — 30/30 (dəyişməyib)
 mypy: PASS (97 fayl)
 ruff: PASS
@@ -218,12 +244,37 @@ File: backend/tests/background_tasks/test_celery_task_registration.py
 Change: 2 yeni regression test əlavə edildi (NullPool engine ayrılığı, model registry həlli)
 Reason: Bu 2 bug-ın bir daha səssizcə geri qayıtmaması üçün
 Test result: PASS (5/5 bu fayldan)
+
+File: backend/app/core/config.py
+Change: TRUST_PROXY_HEADERS sazlaması əlavə edildi (default False)
+Reason: Bug C (IP spoofing)
+Test result: PASS
+
+File: backend/app/modules/auth/dependencies.py
+Change: get_client_ip artıq trusted_proxy_headers yoxlayır, aktiv olanda X-Forwarded-For-un SON hissəsini götürür
+Reason: Bug C — Caddy XFF-i əvəz etmir, əlavə edir, ona görə ilk dəyər hələ də saxtalaşdırıla bilər
+Test result: PASS (4 yeni test)
+
+File: .env.example, .env.production.example
+Change: TRUST_PROXY_HEADERS sənədləşdirildi (dev: false, prod: true — Caddy tək hop olduğu üçün)
+Reason: Bug C
+Test result: N/A (sənədləşdirmə)
+
+File: backend/app/modules/audit_logs/actions.py
+Change: 3 əskik action əlavə edildi (ADMIN_ACCOUNT_STATUS_CHANGED, ADMIN_CUSTOMER_STATUS_CHANGED, SCHEDULED_PAYMENT_CREATED)
+Reason: Mərhələ 41 action coverage auditi
+Test result: PASS (kompilyasiya + mövcud testlər)
+
+File: backend/tests/modules/auth/test_client_ip.py
+Change: YENİ — 4 test (default rədd, aktiv olanda qəbul, son-hop seçimi, client yoxdursa None)
+Reason: Bug C-nin bir daha geri qayıtmaması üçün
+Test result: PASS (4/4)
 ```
 
 ---
 
 ## Status: READY
 
-Real request → real Celery task → real database yazısı → real admin görüntüsü zənciri tam sübut edildi. Bu turda tapılan 2 kritik bug (hər ikisi yalnız real worker prosesi ilə aşkarlana bilən, sadəcə kod oxumaqla tapıla bilməyəcək növdən idi) düzəldildi və eyni real ssenari ilə təkrar sınanaraq təsdiqləndi. 238/238 backend, 30/30 frontend test, mypy/ruff/tsc/eslint/build təmiz.
+Real request → real Celery task → real database yazısı → real admin görüntüsü zənciri tam sübut edildi. İki ardıcıl doğrulama turunda tapılan **3 kritik bug** (hamısı yalnız real server+worker prosesi ilə, konkurrensiya testi ilə və ya diqqətli kod auditı ilə aşkarlana bilən növdən idi) düzəldildi və real ssenarilərlə təkrar sınanaraq təsdiqləndi. 242/242 backend, 30/30 frontend test, mypy/ruff/tsc/eslint/build təmiz.
 
-**Push edilməyib** (tapşırığın tələbinə uyğun olaraq). Commit yerli qalır.
+**Push edilməyib** (hər iki turun açıq tələbinə uyğun olaraq). Commit-lər yerli qalır.
