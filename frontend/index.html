@@ -3,6 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Chrome's built-in page translator (and similar in-browser
+    translation extensions) rewrites text nodes in place by wrapping them
+    in <font> elements. React's reconciler keeps its own pointers into the
+    DOM it last rendered, so once Translate has spliced nodes out from
+    under it, a later insertBefore/removeChild call throws
+    NotFoundError and crashes the whole app to the nearest error boundary
+    (or a blank #root if there isn't one) — reproduced live in this app on
+    the admin customer-detail page (creating an account, which re-renders
+    the account list) with Chrome's translate active, and confirmed fixed
+    by disabling it. "notranslate" + content="notranslate" opt the
+    React-managed subtree out of translation entirely rather than trying
+    to patch around every place a re-render could collide with it. -->
+    <meta name="google" content="notranslate" />
     <title>Ledger &mdash; Online Banking</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -11,7 +24,7 @@
       rel="stylesheet"
     />
   </head>
-  <body class="bg-paper text-ink antialiased">
+  <body class="bg-paper text-ink antialiased notranslate" translate="no">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
