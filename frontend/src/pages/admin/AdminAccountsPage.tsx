@@ -102,7 +102,10 @@ export function AdminAccountsPage() {
               {data.items.map((account) => (
                 <li key={account.id} className="flex items-center justify-between px-5 py-4">
                   <div>
-                    <p className="font-mono text-sm text-ink">{formatAccountNumber(account.account_number)}</p>
+                    {account.customer_name && (
+                      <p className="text-sm font-medium text-ink">{account.customer_name}</p>
+                    )}
+                    <p className="font-mono text-sm text-slate-600">{formatAccountNumber(account.account_number)}</p>
                     <p className="text-xs text-slate-500">
                       {account.account_type} &middot; {formatMoney(account.balance, account.currency)}
                     </p>

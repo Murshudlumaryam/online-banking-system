@@ -2,9 +2,9 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { useParams } from "react-router";
 
-import { useAdminCustomer, useCreateAccount, useUpdateCustomerStatus } from "@/hooks/useAdmin";
+import { useAdminAccounts, useAdminCustomer, useCreateAccount, useUpdateCustomerStatus } from "@/hooks/useAdmin";
 import { getApiErrorMessage } from "@/lib/apiClient";
-import { formatDate } from "@/lib/format";
+import { formatAccountNumber, formatDate, formatMoney } from "@/lib/format";
 import type { CustomerStatus } from "@/types/api";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -15,6 +15,7 @@ import { Card, ErrorBanner, Spinner } from "@/components/ui/Feedback";
 export function AdminCustomerDetailPage() {
   const { customerId } = useParams<{ customerId: string }>();
   const { data: customer, isLoading, isError, error } = useAdminCustomer(customerId);
+  const { data: accounts, isLoading: accountsLoading } = useAdminAccounts(1, undefined, undefined, customerId);
   const updateStatus = useUpdateCustomerStatus();
   const createAccount = useCreateAccount();
 
@@ -83,6 +84,29 @@ export function AdminCustomerDetailPage() {
             </Button>
           )}
         </div>
+      </Card>
+
+      <Card className="p-6">
+        <h3 className="font-display text-lg text-ink">Accounts</h3>
+        {accountsLoading ? (
+          <Spinner label="Loading accounts" />
+        ) : !accounts || accounts.items.length === 0 ? (
+          <p className="mt-3 text-sm text-slate-500">This customer has no accounts yet.</p>
+        ) : (
+          <ul className="mt-4 divide-y divide-slate-100">
+            {accounts.items.map((account) => (
+              <li key={account.id} className="flex items-center justify-between py-3">
+                <div>
+                  <p className="font-mono text-sm text-ink">{formatAccountNumber(account.account_number)}</p>
+                  <p className="text-xs text-slate-500">
+                    {account.account_type} &middot; {formatMoney(account.balance, account.currency)}
+                  </p>
+                </div>
+                <Badge status={account.status}>{account.status}</Badge>
+              </li>
+            ))}
+          </ul>
+        )}
       </Card>
 
       <Card className="p-6">

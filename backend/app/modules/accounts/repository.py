@@ -97,19 +97,36 @@ class AccountRepository:
         return totals
 
     async def list_all(
-        self, *, offset: int, limit: int, status: AccountStatus | None = None, search: str | None = None
+        self,
+        *,
+        offset: int,
+        limit: int,
+        status: AccountStatus | None = None,
+        search: str | None = None,
+        customer_id: uuid.UUID | None = None,
     ) -> tuple[list[Account], int]:
+        from sqlalchemy.orm import selectinload
+
         query = select(Account)
         if status is not None:
             query = query.where(Account.status == status)
         if search:
             query = query.where(Account.account_number.ilike(f"%{search}%"))
+        if customer_id is not None:
+            query = query.where(Account.customer_id == customer_id)
 
         count_result = await self._session.execute(query.with_only_columns(Account.id))
         total = len(count_result.all())
 
+        # selectinload, not lazy access later — the admin listing always
+        # needs the owning customer's name to render, so this avoids one
+        # extra query per row (N+1) for however many accounts are on the
+        # page.
         result = await self._session.execute(
-            query.order_by(Account.created_at.desc()).offset(offset).limit(limit)
+            query.options(selectinload(Account.customer))
+            .order_by(Account.created_at.desc())
+            .offset(offset)
+            .limit(limit)
         )
         return list(result.scalars().all()), total
 

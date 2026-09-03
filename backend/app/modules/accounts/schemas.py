@@ -13,6 +13,13 @@ class AccountResponse(BaseModel):
     currency: str
     balance: Decimal
     status: AccountStatus
+    # Populated only where the caller actually eager-loaded the
+    # relationship (admin listings) — the customer's own account views
+    # don't need to say "this is your account" back to them. See
+    # AdminService.list_accounts and get_customer_accounts, which use
+    # selectinload for exactly this.
+    customer_id: uuid.UUID | None = None
+    customer_name: str | None = None
 
     model_config = {"from_attributes": True}
 

@@ -79,9 +79,12 @@ class AdminService:
     # ------------------------------------------------------------------
     # Accounts
     # ------------------------------------------------------------------
-    async def list_accounts(self, *, page: int, page_size: int, status=None, search: str | None = None):
+    async def list_accounts(
+        self, *, page: int, page_size: int, status=None, search: str | None = None, customer_id=None
+    ):
         return await self._accounts.list_all(
-            offset=(page - 1) * page_size, limit=page_size, status=status, search=search
+            offset=(page - 1) * page_size, limit=page_size, status=status, search=search,
+            customer_id=customer_id,
         )
 
     async def create_account(self, admin_user: User, payload: CreateAccountRequest) -> Account:

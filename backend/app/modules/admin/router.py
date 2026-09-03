@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.modules.accounts.models import AccountStatus
+from app.modules.accounts.models import Account, AccountStatus
 from app.modules.accounts.schemas import AccountResponse
 from app.modules.admin.schemas import (
     AdminCreateCustomerRequest,
@@ -20,7 +20,7 @@ from app.modules.admin.service import AdminService
 from app.modules.audit_logs.schemas import AuditLogResponse
 from app.modules.auth.dependencies import require_admin
 from app.modules.beneficiaries.schemas import BeneficiaryResponse
-from app.modules.cards.models import CardStatus
+from app.modules.cards.models import Card, CardStatus
 from app.modules.cards.schemas import CardResponse
 from app.modules.customers.models import CustomerStatus
 from app.modules.customers.schemas import CustomerProfileResponse
@@ -179,15 +179,23 @@ async def list_accounts(
     page_size: int = Query(default=20, ge=1, le=100),
     status_filter: AccountStatus | None = Query(default=None, alias="status"),
     search: str | None = Query(default=None, description="Matches account number"),
+    customer_id: uuid.UUID | None = Query(default=None),
     admin_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_db),
 ) -> PaginatedResponse[AccountResponse]:
     service = AdminService(session)
     accounts, total = await service.list_accounts(
-        page=page, page_size=page_size, status=status_filter, search=search
+        page=page, page_size=page_size, status=status_filter, search=search, customer_id=customer_id
     )
+
+    def _to_response(account: Account) -> AccountResponse:
+        response = AccountResponse.model_validate(account)
+        if account.customer is not None:
+            response.customer_name = f"{account.customer.first_name} {account.customer.last_name}"
+        return response
+
     return PaginatedResponse[AccountResponse](
-        items=[AccountResponse.model_validate(a) for a in accounts],
+        items=[_to_response(a) for a in accounts],
         total=total,
         page=page,
         page_size=page_size,
@@ -301,8 +309,17 @@ async def list_cards(
 ) -> PaginatedResponse[CardResponse]:
     service = AdminService(session)
     cards, total = await service.list_cards(page=page, page_size=page_size, status=status_filter)
+
+    def _to_response(card: Card) -> CardResponse:
+        response = CardResponse.model_validate(card)
+        if card.account is not None:
+            response.account_number = card.account.account_number
+            if card.account.customer is not None:
+                response.customer_name = f"{card.account.customer.first_name} {card.account.customer.last_name}"
+        return response
+
     return PaginatedResponse[CardResponse](
-        items=[CardResponse.model_validate(c) for c in cards],
+        items=[_to_response(c) for c in cards],
         total=total,
         page=page,
         page_size=page_size,

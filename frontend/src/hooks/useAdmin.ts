@@ -35,10 +35,10 @@ export function useUpdateCustomerStatus() {
   });
 }
 
-export function useAdminAccounts(page: number, status?: AccountStatus, search?: string) {
+export function useAdminAccounts(page: number, status?: AccountStatus, search?: string, customerId?: string) {
   return useQuery({
-    queryKey: ["admin", "accounts", page, status, search],
-    queryFn: () => adminService.listAccounts(page, status, search),
+    queryKey: ["admin", "accounts", page, status, search, customerId],
+    queryFn: () => adminService.listAccounts(page, status, search, customerId),
   });
 }
 

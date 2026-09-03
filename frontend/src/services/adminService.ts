@@ -97,8 +97,13 @@ export const adminService = {
     page: number,
     status?: AccountStatus,
     search?: string,
+    customerId?: string,
   ): Promise<PaginatedResponse<AccountResponse>> {
-    return unwrap(api.GET("/api/v1/admin/accounts", { params: { query: { page, status, search } } }));
+    return unwrap(
+      api.GET("/api/v1/admin/accounts", {
+        params: { query: { page, status, search, customer_id: customerId } },
+      }),
+    );
   },
 
   async createAccount(payload: CreateAccountPayload): Promise<AccountResponse> {

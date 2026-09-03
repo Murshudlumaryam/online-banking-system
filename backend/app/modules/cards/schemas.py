@@ -14,6 +14,11 @@ class CardResponse(BaseModel):
     card_type: str
     expiry_date: date
     status: CardStatus
+    # Populated only in admin listings (see AdminService.list_cards) —
+    # same reasoning as AccountResponse.customer_name: a customer looking
+    # at their own card already knows whose it is.
+    account_number: str | None = None
+    customer_name: str | None = None
 
     model_config = {"from_attributes": True}
 

@@ -79,7 +79,9 @@ export function AdminCardsPage() {
             <table className="w-full text-sm">
               <thead className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
+                  <th className="px-4 py-3">Cardholder</th>
                   <th className="px-4 py-3">Card number</th>
+                  <th className="px-4 py-3">Account</th>
                   <th className="px-4 py-3">Type</th>
                   <th className="px-4 py-3">Expires</th>
                   <th className="px-4 py-3">Status</th>
@@ -89,7 +91,11 @@ export function AdminCardsPage() {
               <tbody className="divide-y divide-slate-100">
                 {data.items.map((card) => (
                   <tr key={card.id}>
+                    <td className="px-4 py-3 text-ink">{card.customer_name ?? <span className="text-slate-400">—</span>}</td>
                     <td className="px-4 py-3 font-mono text-xs text-ink">{card.masked_card_number}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-slate-500">
+                      {card.account_number ?? <span className="text-slate-400">—</span>}
+                    </td>
                     <td className="px-4 py-3 text-slate-600">{card.card_type}</td>
                     <td className="px-4 py-3 text-slate-600">{formatDate(card.expiry_date)}</td>
                     <td className="px-4 py-3">

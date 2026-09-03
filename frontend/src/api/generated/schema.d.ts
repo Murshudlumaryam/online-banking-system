@@ -1014,6 +1014,10 @@ export interface components {
             /** Balance */
             balance: string;
             status: components["schemas"]["AccountStatus"];
+            /** Customer Id */
+            customer_id?: string | null;
+            /** Customer Name */
+            customer_name?: string | null;
         };
         /**
          * AccountStatus
@@ -1128,6 +1132,10 @@ export interface components {
              */
             expiry_date: string;
             status: components["schemas"]["CardStatus"];
+            /** Account Number */
+            account_number?: string | null;
+            /** Customer Name */
+            customer_name?: string | null;
         };
         /**
          * CardStatus
@@ -3026,6 +3034,7 @@ export interface operations {
                 status?: components["schemas"]["AccountStatus"] | null;
                 /** @description Matches account number */
                 search?: string | null;
+                customer_id?: string | null;
             };
             header?: never;
             path?: never;

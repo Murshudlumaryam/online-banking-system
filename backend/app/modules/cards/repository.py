@@ -72,6 +72,8 @@ class CardRepository:
     ) -> tuple[list[Card], int]:
         """Admin-facing: every card in the system, not scoped to one
         customer. See app/modules/admin/router.py's GET /admin/cards."""
+        from sqlalchemy.orm import selectinload
+
         query = select(Card).where(Card.deleted_at.is_(None))
         if status is not None:
             query = query.where(Card.status == status)
@@ -80,7 +82,10 @@ class CardRepository:
         total = len(count_result.all())
 
         result = await self._session.execute(
-            query.order_by(Card.created_at.desc()).offset(offset).limit(limit)
+            query.options(selectinload(Card.account).selectinload(Account.customer))
+            .order_by(Card.created_at.desc())
+            .offset(offset)
+            .limit(limit)
         )
         return list(result.scalars().all()), total
 

@@ -81,6 +81,8 @@ export interface AccountResponse {
   currency: string;
   balance: string;
   status: AccountStatus;
+  customer_id?: string | null;
+  customer_name?: string | null;
 }
 
 export interface AccountBalanceResponse {
@@ -96,6 +98,8 @@ export interface CardResponse {
   card_type: string;
   expiry_date: string;
   status: CardStatus;
+  account_number?: string | null;
+  customer_name?: string | null;
 }
 
 export interface BeneficiaryResponse {
