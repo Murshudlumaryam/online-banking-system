@@ -128,6 +128,13 @@ export function useAdminExchangeRates() {
   });
 }
 
+export function useFetchLiveExchangeRate() {
+  return useMutation({
+    mutationFn: ({ sourceCurrency, targetCurrency }: { sourceCurrency: string; targetCurrency: string }) =>
+      adminService.fetchLiveExchangeRate(sourceCurrency, targetCurrency),
+  });
+}
+
 export function useCreateExchangeRate() {
   const queryClient = useQueryClient();
   return useMutation({

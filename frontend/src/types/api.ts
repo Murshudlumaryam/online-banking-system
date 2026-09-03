@@ -118,6 +118,12 @@ export interface ExchangeRateResponse {
   valid_to: string | null;
 }
 
+export interface LiveExchangeRateResponse {
+  source_currency: string;
+  target_currency: string;
+  rate: string;
+}
+
 export interface LedgerEntryResponse {
   id: string;
   account_id: string;

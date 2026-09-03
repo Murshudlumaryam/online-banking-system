@@ -44,6 +44,12 @@ class CreateExchangeRateRequest(BaseModel):
         return value.upper()
 
 
+class LiveExchangeRateResponse(BaseModel):
+    source_currency: str
+    target_currency: str
+    rate: Decimal
+
+
 class AdminCreateCustomerRequest(BaseModel):
     """Lets an admin open an account for a customer who can't (or hasn't
     yet) self-registered — e.g. a walk-in branch customer. Distinct from

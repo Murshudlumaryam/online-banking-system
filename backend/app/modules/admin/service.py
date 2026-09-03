@@ -244,6 +244,17 @@ class AdminService:
         )
         return rate
 
+    async def fetch_live_exchange_rate(self, *, source_currency: str, target_currency: str) -> float:
+        """
+        Preview only — does not touch the database. The admin reviews the
+        fetched value and still has to submit the existing "Add rate" form
+        to actually save it, same validation and audit trail as a
+        manually-typed rate.
+        """
+        from app.modules.exchange_rates.frankfurter_client import fetch_live_rate
+
+        return await fetch_live_rate(source_currency=source_currency, target_currency=target_currency)
+
     # ------------------------------------------------------------------
     # Cards (system-wide view)
     # ------------------------------------------------------------------

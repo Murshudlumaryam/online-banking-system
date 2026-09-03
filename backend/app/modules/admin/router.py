@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
@@ -12,6 +13,7 @@ from app.modules.admin.schemas import (
     CreateAccountRequest,
     CreateCardRequest,
     CreateExchangeRateRequest,
+    LiveExchangeRateResponse,
     ReverseTransactionRequest,
     UpdateAccountStatusRequest,
     UpdateCustomerStatusRequest,
@@ -559,6 +561,33 @@ async def list_exchange_rates(
     service = AdminService(session)
     rates = await service.list_all_exchange_rates()
     return [ExchangeRateResponse.model_validate(r) for r in rates]
+
+
+@router.get(
+    "/exchange-rates/live",
+    response_model=LiveExchangeRateResponse,
+    summary="Fetch the current market rate for a currency pair (preview only, not saved)",
+)
+async def fetch_live_exchange_rate(
+    source_currency: str = Query(min_length=3, max_length=3),
+    target_currency: str = Query(min_length=3, max_length=3),
+    admin_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+) -> LiveExchangeRateResponse:
+    from app.modules.exchange_rates.frankfurter_client import ExchangeRateProviderError
+
+    service = AdminService(session)
+    try:
+        rate = await service.fetch_live_exchange_rate(
+            source_currency=source_currency, target_currency=target_currency
+        )
+    except ExchangeRateProviderError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return LiveExchangeRateResponse(
+        source_currency=source_currency.upper(),
+        target_currency=target_currency.upper(),
+        rate=Decimal(str(rate)),
+    )
 
 
 @router.post(

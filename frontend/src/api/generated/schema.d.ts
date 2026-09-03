@@ -928,6 +928,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/exchange-rates/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Fetch the current market rate for a currency pair (preview only, not saved) */
+        get: operations["fetch_live_exchange_rate_api_v1_admin_exchange_rates_live_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -1383,6 +1400,15 @@ export interface components {
          * @enum {string}
          */
         LedgerEntryType: "DEBIT" | "CREDIT";
+        /** LiveExchangeRateResponse */
+        LiveExchangeRateResponse: {
+            /** Source Currency */
+            source_currency: string;
+            /** Target Currency */
+            target_currency: string;
+            /** Rate */
+            rate: string;
+        };
         /** LoginRequest */
         LoginRequest: {
             /**
@@ -3630,6 +3656,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExchangeRateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fetch_live_exchange_rate_api_v1_admin_exchange_rates_live_get: {
+        parameters: {
+            query: {
+                source_currency: string;
+                target_currency: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveExchangeRateResponse"];
                 };
             };
             /** @description Validation Error */

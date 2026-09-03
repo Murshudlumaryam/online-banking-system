@@ -8,6 +8,7 @@ import type {
   CustomerProfile,
   CustomerStatus,
   ExchangeRateResponse,
+  LiveExchangeRateResponse,
   PaginatedResponse,
   TransactionDetailResponse,
   TransactionResponse,
@@ -241,6 +242,14 @@ export const adminService = {
 
   async listExchangeRates(): Promise<ExchangeRateResponse[]> {
     return unwrap(api.GET("/api/v1/admin/exchange-rates", {}));
+  },
+
+  async fetchLiveExchangeRate(sourceCurrency: string, targetCurrency: string): Promise<LiveExchangeRateResponse> {
+    return unwrap(
+      api.GET("/api/v1/admin/exchange-rates/live", {
+        params: { query: { source_currency: sourceCurrency, target_currency: targetCurrency } },
+      }),
+    );
   },
 
   async createExchangeRate(payload: CreateExchangeRatePayload): Promise<ExchangeRateResponse> {
