@@ -1,6 +1,7 @@
 """
 Fetches live exchange rates from Frankfurter (https://frankfurter.dev), a
-free, no-API-key-needed rate service backed by the European Central Bank.
+free, no-API-key-needed rate service blending multiple central-bank and
+official sources.
 
 Deliberately lives inside app/modules/exchange_rates/ rather than a
 generic app/services/ folder — every other domain in this codebase (auth,
@@ -9,6 +10,18 @@ module it belongs to (see app/core/email.py's provider pattern for a
 similar "one small client class, one job" shape). A parallel top-level
 services/ directory would be a second, competing place to look for this
 kind of code.
+
+Uses Frankfurter's v2 API specifically, not v1: v1 only covers ~31
+currencies from the ECB alone and does not include AZN (Azerbaijani
+Manat) — confirmed against Frankfurter's own currency-request tracker
+(github.com/lineofflight/frankfurter/issues/144), where AZN is listed as
+requested-but-unsupported for v1. v2 blends multiple central-bank/official
+sources and covers 201 currencies, AZN included (see
+frankfurter.dev/currencies/azn/). v1's base/symbols query-string endpoint
+and v2's /rate/{base}/{quote} path endpoint are different shapes; this
+was found and fixed by actually hitting the endpoint with a real currency
+pair from this project (AZN -> USD) and getting a live error, not by
+reading the docs in isolation.
 
 This client only *fetches* a rate for the admin to review — it never
 writes to the database itself. Saving a fetched rate still goes through
@@ -23,7 +36,7 @@ import httpx
 
 logger = logging.getLogger("app.exchange_rates")
 
-_FRANKFURTER_API_URL = "https://api.frankfurter.dev/v1/latest"
+_FRANKFURTER_API_BASE = "https://api.frankfurter.dev/v2"
 
 
 class ExchangeRateProviderError(Exception):
@@ -38,9 +51,12 @@ async def fetch_live_rate(*, source_currency: str, target_currency: str) -> floa
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(
-                _FRANKFURTER_API_URL, params={"base": source, "symbols": target}
-            )
+            response = await client.get(f"{_FRANKFURTER_API_BASE}/rate/{source}/{target}")
+            # v2 uses 400/404/422 with a {"message": "..."} body for bad or
+            # unsupported currency codes — raise_for_status surfaces all of
+            # these as HTTPStatusError, which the except clause below turns
+            # into the same clean ExchangeRateProviderError regardless of
+            # which of the three it was.
             response.raise_for_status()
             payload = response.json()
     except httpx.HTTPError as exc:
@@ -52,9 +68,6 @@ async def fetch_live_rate(*, source_currency: str, target_currency: str) -> floa
             f"Couldn't reach the exchange rate provider: {exc}"
         ) from exc
 
-    rates = payload.get("rates", {})
-    if target not in rates:
-        raise ExchangeRateProviderError(
-            f"No rate available for {source} -> {target}"
-        )
-    return float(rates[target])
+    if "rate" not in payload:
+        raise ExchangeRateProviderError(f"No rate available for {source} -> {target}")
+    return float(payload["rate"])

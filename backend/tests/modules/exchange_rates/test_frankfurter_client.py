@@ -23,9 +23,8 @@ def _mocked_client(handler):
 @pytest.mark.asyncio
 async def test_fetch_live_rate_returns_the_requested_pair(monkeypatch):
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.params["base"] == "AZN"
-        assert request.url.params["symbols"] == "USD"
-        return httpx.Response(200, json={"amount": 1.0, "base": "AZN", "date": "2026-09-01", "rates": {"USD": 0.588}})
+        assert str(request.url) == "https://api.frankfurter.dev/v2/rate/AZN/USD"
+        return httpx.Response(200, json={"date": "2026-09-01", "base": "AZN", "quote": "USD", "rate": 0.588})
 
     monkeypatch.setattr(httpx, "AsyncClient", _mocked_client(handler))
 
@@ -34,9 +33,11 @@ async def test_fetch_live_rate_returns_the_requested_pair(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_fetch_live_rate_raises_a_clean_error_when_pair_is_missing(monkeypatch):
+async def test_fetch_live_rate_raises_a_clean_error_when_pair_is_unsupported(monkeypatch):
+    """v2 returns 422 with a JSON message body for an unsupported/invalid
+    currency code, rather than a 200 with an empty rates object."""
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"amount": 1.0, "base": "AZN", "date": "2026-09-01", "rates": {}})
+        return httpx.Response(422, json={"message": "Could not find currency XYZ"})
 
     monkeypatch.setattr(httpx, "AsyncClient", _mocked_client(handler))
 
@@ -58,7 +59,7 @@ async def test_fetch_live_rate_raises_a_clean_error_on_http_failure(monkeypatch)
 @pytest.mark.asyncio
 async def test_admin_can_preview_a_live_rate(client, admin_headers, monkeypatch):
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"amount": 1.0, "base": "AZN", "date": "2026-09-01", "rates": {"USD": 0.588}})
+        return httpx.Response(200, json={"date": "2026-09-01", "base": "AZN", "quote": "USD", "rate": 0.588})
 
     monkeypatch.setattr(httpx, "AsyncClient", _mocked_client(handler))
 
