@@ -1,9 +1,12 @@
 import asyncio
+import json
 
+import httpx
 import pytest
 
 from app.core.email import (
     ConsoleEmailProvider,
+    ResendEmailProvider,
     SMTPEmailProvider,
     create_email_provider,
 )
@@ -42,6 +45,81 @@ def test_create_email_provider_returns_smtp_when_configured(monkeypatch):
     finally:
         monkeypatch.delenv("EMAIL_BACKEND", raising=False)
         get_settings.cache_clear()
+
+
+def test_create_email_provider_returns_resend_when_configured(monkeypatch):
+    monkeypatch.setenv("EMAIL_BACKEND", "resend")
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    try:
+        provider = create_email_provider()
+        assert isinstance(provider, ResendEmailProvider)
+    finally:
+        monkeypatch.delenv("EMAIL_BACKEND", raising=False)
+        get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_resend_email_provider_sends_the_correct_request(monkeypatch):
+    """
+    Doesn't hit the real Resend API (no network access in CI/this
+    sandbox, and a shared free-tier key shouldn't be spent on every test
+    run) — but does exercise the actual httpx call path end to end via a
+    MockTransport, so this verifies the real request Resend would receive
+    (URL, auth header, JSON body), not just that some function was called.
+    """
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["auth_header"] = request.headers.get("authorization")
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"id": "test-email-id"})
+
+    real_async_client = httpx.AsyncClient
+
+    class _MockedAsyncClient(real_async_client):
+        def __init__(self, *args, **kwargs):
+            kwargs["transport"] = httpx.MockTransport(handler)
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", _MockedAsyncClient)
+
+    provider = ResendEmailProvider(api_key="test-api-key-123", from_address="onboarding@resend.dev")
+    await provider.send(
+        to_address="customer@example.com",
+        subject="Your transfer confirmation code",
+        body="Your one-time code is: 654321",
+    )
+
+    assert captured["url"] == "https://api.resend.com/emails"
+    assert captured["auth_header"] == "Bearer test-api-key-123"
+    assert captured["body"] == {
+        "from": "onboarding@resend.dev",
+        "to": "customer@example.com",
+        "subject": "Your transfer confirmation code",
+        "text": "Your one-time code is: 654321",
+    }
+
+
+@pytest.mark.asyncio
+async def test_resend_email_provider_raises_on_api_error(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={"message": "invalid API key"})
+
+    real_async_client = httpx.AsyncClient
+
+    class _MockedAsyncClient(real_async_client):
+        def __init__(self, *args, **kwargs):
+            kwargs["transport"] = httpx.MockTransport(handler)
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", _MockedAsyncClient)
+
+    provider = ResendEmailProvider(api_key="bad-key", from_address="onboarding@resend.dev")
+    with pytest.raises(httpx.HTTPStatusError):
+        await provider.send(to_address="customer@example.com", subject="Hi", body="Body")
 
 
 @pytest.mark.asyncio

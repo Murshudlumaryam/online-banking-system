@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     rate_limit_backend: str = Field(default="redis")  # "redis" or "memory" (tests/local dev)
 
     # --- Email (Phase 7) ---
-    email_backend: str = Field(default="console")  # "console" (logs only) or "smtp" (real send)
+    email_backend: str = Field(default="console")  # "console" (logs only) | "smtp" | "resend" (real send)
     # Which channel(s) carry the transfer-confirmation OTP. Previously
     # hardcoded to "sms" in TransactionService.initiate_transfer, which
     # meant it could never reach an inbox at all unless Twilio credentials
@@ -83,6 +83,12 @@ class Settings(BaseSettings):
     smtp_password: str = Field(default="")
     smtp_use_tls: bool = Field(default=True)
     smtp_from_address: str = Field(default="no-reply@example-bank.internal")
+    # Resend (https://resend.com) — a REST API email provider, not SMTP.
+    # Its free tier reaches a real inbox (Gmail included) with no paid
+    # relay needed, which SMTP alone doesn't give you out of the box. Set
+    # EMAIL_BACKEND=resend to use these instead of the SMTP_* settings.
+    resend_api_key: str = Field(default="")
+    resend_from_address: str = Field(default="onboarding@resend.dev")
 
     # --- SMS (Phase 8) ---
     sms_backend: str = Field(default="console")  # "console" (logs only) or "twilio" (real send)
