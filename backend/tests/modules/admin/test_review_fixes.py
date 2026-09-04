@@ -232,8 +232,10 @@ async def test_customer_cannot_block_an_already_blocked_card(
 
 @pytest.mark.asyncio
 async def test_customer_cannot_block_someone_elses_card(
-    client: AsyncClient, admin_headers: dict, registered_customer: dict, unique_email: str
+    client: AsyncClient, admin_headers: dict, registered_customer: dict, unique_email: str, stub_background_tasks
 ):
+    from tests.conftest import register_and_confirm
+
     account_response = await client.post(
         "/api/v1/admin/accounts",
         json={"customer_id": str(registered_customer["customer"].id), "account_type": "CHECKING", "currency": "AZN"},
@@ -246,9 +248,10 @@ async def test_customer_cannot_block_someone_elses_card(
     card_id = card_response.json()["id"]
 
     unique = uuid.uuid4().hex[:10]
-    await client.post(
-        "/api/v1/auth/register",
-        json={
+    await register_and_confirm(
+        client,
+        stub_background_tasks,
+        {
             "email": f"other_{unique_email}",
             "password": "StrongPass1",
             "first_name": "Other",

@@ -18,23 +18,25 @@ def _register_payload(email: str) -> dict:
     }
 
 
-async def _register_and_login(client: AsyncClient, email: str) -> dict:
-    await client.post("/api/v1/auth/register", json=_register_payload(email))
+async def _register_and_login(client: AsyncClient, email: str, stub_background_tasks) -> dict:
+    from tests.conftest import register_and_confirm
+
+    await register_and_confirm(client, stub_background_tasks, _register_payload(email))
     response = await client.post("/api/v1/auth/login", json={"email": email, "password": "StrongPass1"})
     return response.json()
 
 
 @pytest.mark.asyncio
-async def test_login_without_2fa_returns_tokens_directly(client: AsyncClient, unique_email: str):
-    tokens = await _register_and_login(client, unique_email)
+async def test_login_without_2fa_returns_tokens_directly(client: AsyncClient, unique_email: str, stub_background_tasks):
+    tokens = await _register_and_login(client, unique_email, stub_background_tasks)
     assert tokens["mfa_required"] is False
     assert tokens["access_token"]
     assert "refresh_token" not in tokens
 
 
 @pytest.mark.asyncio
-async def test_full_2fa_enrollment_and_login_flow(client: AsyncClient, unique_email: str):
-    tokens = await _register_and_login(client, unique_email)
+async def test_full_2fa_enrollment_and_login_flow(client: AsyncClient, unique_email: str, stub_background_tasks):
+    tokens = await _register_and_login(client, unique_email, stub_background_tasks)
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
 
     setup_response = await client.post("/api/v1/auth/2fa/setup", headers=headers)
@@ -73,8 +75,8 @@ async def test_full_2fa_enrollment_and_login_flow(client: AsyncClient, unique_em
 
 
 @pytest.mark.asyncio
-async def test_enable_2fa_rejects_wrong_code(client: AsyncClient, unique_email: str):
-    tokens = await _register_and_login(client, unique_email)
+async def test_enable_2fa_rejects_wrong_code(client: AsyncClient, unique_email: str, stub_background_tasks):
+    tokens = await _register_and_login(client, unique_email, stub_background_tasks)
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
 
     await client.post("/api/v1/auth/2fa/setup", headers=headers)
@@ -84,8 +86,8 @@ async def test_enable_2fa_rejects_wrong_code(client: AsyncClient, unique_email: 
 
 
 @pytest.mark.asyncio
-async def test_enable_2fa_without_setup_first_fails(client: AsyncClient, unique_email: str):
-    tokens = await _register_and_login(client, unique_email)
+async def test_enable_2fa_without_setup_first_fails(client: AsyncClient, unique_email: str, stub_background_tasks):
+    tokens = await _register_and_login(client, unique_email, stub_background_tasks)
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
 
     response = await client.post("/api/v1/auth/2fa/enable", json={"code": "123456"}, headers=headers)
@@ -94,8 +96,8 @@ async def test_enable_2fa_without_setup_first_fails(client: AsyncClient, unique_
 
 
 @pytest.mark.asyncio
-async def test_verify_mfa_login_rejects_wrong_code(client: AsyncClient, unique_email: str):
-    tokens = await _register_and_login(client, unique_email)
+async def test_verify_mfa_login_rejects_wrong_code(client: AsyncClient, unique_email: str, stub_background_tasks):
+    tokens = await _register_and_login(client, unique_email, stub_background_tasks)
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
 
     setup = await client.post("/api/v1/auth/2fa/setup", headers=headers)
@@ -126,8 +128,8 @@ async def test_verify_mfa_login_rejects_expired_or_invalid_challenge_token(clien
 
 
 @pytest.mark.asyncio
-async def test_disable_2fa_requires_correct_password_and_code(client: AsyncClient, unique_email: str):
-    tokens = await _register_and_login(client, unique_email)
+async def test_disable_2fa_requires_correct_password_and_code(client: AsyncClient, unique_email: str, stub_background_tasks):
+    tokens = await _register_and_login(client, unique_email, stub_background_tasks)
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
 
     setup = await client.post("/api/v1/auth/2fa/setup", headers=headers)
@@ -156,8 +158,8 @@ async def test_disable_2fa_requires_correct_password_and_code(client: AsyncClien
 
 
 @pytest.mark.asyncio
-async def test_cannot_enable_2fa_twice(client: AsyncClient, unique_email: str):
-    tokens = await _register_and_login(client, unique_email)
+async def test_cannot_enable_2fa_twice(client: AsyncClient, unique_email: str, stub_background_tasks):
+    tokens = await _register_and_login(client, unique_email, stub_background_tasks)
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
 
     setup = await client.post("/api/v1/auth/2fa/setup", headers=headers)
@@ -170,8 +172,8 @@ async def test_cannot_enable_2fa_twice(client: AsyncClient, unique_email: str):
 
 
 @pytest.mark.asyncio
-async def test_cannot_disable_2fa_when_not_enabled(client: AsyncClient, unique_email: str):
-    tokens = await _register_and_login(client, unique_email)
+async def test_cannot_disable_2fa_when_not_enabled(client: AsyncClient, unique_email: str, stub_background_tasks):
+    tokens = await _register_and_login(client, unique_email, stub_background_tasks)
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
 
     response = await client.post(
@@ -185,7 +187,7 @@ async def test_cannot_disable_2fa_when_not_enabled(client: AsyncClient, unique_e
 
 @pytest.mark.asyncio
 async def test_totp_secret_is_encrypted_at_rest_in_the_database(
-    client: AsyncClient, db_session, unique_email: str
+    client: AsyncClient, db_session, unique_email: str, stub_background_tasks
 ):
     """
     Regression test for the Phase 9 hardening item: the raw TOTP secret
@@ -198,7 +200,7 @@ async def test_totp_secret_is_encrypted_at_rest_in_the_database(
     from app.core.crypto import decrypt_secret
     from app.modules.users.models import User
 
-    tokens = await _register_and_login(client, unique_email)
+    tokens = await _register_and_login(client, unique_email, stub_background_tasks)
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
 
     setup_response = await client.post("/api/v1/auth/2fa/setup", headers=headers)
@@ -214,7 +216,7 @@ async def test_totp_secret_is_encrypted_at_rest_in_the_database(
 
 @pytest.mark.asyncio
 async def test_totp_secret_column_is_cleared_not_just_disabled_flag(
-    client: AsyncClient, db_session, unique_email: str
+    client: AsyncClient, db_session, unique_email: str, stub_background_tasks
 ):
     """When 2FA is disabled, the encrypted secret itself must be wiped, not
     just the totp_enabled flag flipped — leaving it around after disable
@@ -224,7 +226,7 @@ async def test_totp_secret_column_is_cleared_not_just_disabled_flag(
 
     from app.modules.users.models import User
 
-    tokens = await _register_and_login(client, unique_email)
+    tokens = await _register_and_login(client, unique_email, stub_background_tasks)
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
 
     setup = await client.post("/api/v1/auth/2fa/setup", headers=headers)

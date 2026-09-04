@@ -156,5 +156,24 @@ class RegisterResponse(BaseModel):
     id: uuid.UUID
     email: str
     customer: CustomerSummary
+    # >0 whenever a verification email was actually dispatched; 0 for the
+    # admin-created-customer path (see AdminService.create_customer),
+    # which skips email verification entirely since the admin already
+    # confirmed identity in person.
+    otp_expires_in_seconds: int = 0
 
     model_config = {"from_attributes": True}
+
+
+class ConfirmRegistrationRequest(BaseModel):
+    user_id: uuid.UUID
+    otp_code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class ResendRegistrationOtpRequest(BaseModel):
+    user_id: uuid.UUID
+
+
+class ResendRegistrationOtpResponse(BaseModel):
+    otp_expires_in_seconds: int
+    message: str = "A new code has been sent. The previous code no longer works."

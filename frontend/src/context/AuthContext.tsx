@@ -6,7 +6,7 @@ import { accessTokenStore } from "@/lib/accessTokenStore";
 import { registerSessionExpiredHandler, refreshAccessToken } from "@/lib/apiClient";
 import { decodeAccessToken } from "@/lib/jwt";
 import { authService, type RegisterPayload } from "@/services/authService";
-import type { UserRole } from "@/types/api";
+import type { RegisterResponse, UserRole } from "@/types/api";
 
 type SessionStatus = "loading" | "authenticated" | "unauthenticated";
 
@@ -22,7 +22,7 @@ interface AuthContextValue {
    */
   login: (email: string, password: string) => Promise<{ mfaRequired: boolean; challengeToken?: string }>;
   completeMfaLogin: (challengeToken: string, code: string) => Promise<void>;
-  register: (payload: RegisterPayload) => Promise<void>;
+  register: (payload: RegisterPayload) => Promise<RegisterResponse>;
   logout: () => Promise<void>;
 }
 
@@ -100,7 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const register = useCallback(async (payload: RegisterPayload) => {
-    await authService.register(payload);
+    return authService.register(payload);
   }, []);
 
   const logout = useCallback(async () => {

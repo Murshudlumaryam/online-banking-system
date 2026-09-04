@@ -17,12 +17,14 @@ def _register_payload(email: str) -> dict:
     }
 
 
-async def _register_and_login(client: AsyncClient, email: str) -> dict:
+async def _register_and_login(client: AsyncClient, email: str, stub_background_tasks) -> dict:
     """Registers, logs in, and returns the login response body. The refresh
     token itself is never in that body (see test_login.py) — it's captured
     from the response cookie by the caller when a test needs to manipulate
     it directly (e.g. to test reuse detection)."""
-    await client.post("/api/v1/auth/register", json=_register_payload(email))
+    from tests.conftest import register_and_confirm
+
+    await register_and_confirm(client, stub_background_tasks, _register_payload(email))
     response = await client.post(
         "/api/v1/auth/login", json={"email": email, "password": "StrongPass1"}
     )
@@ -30,8 +32,8 @@ async def _register_and_login(client: AsyncClient, email: str) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_refresh_rotates_token_pair(client: AsyncClient, unique_email: str):
-    login_response = await _register_and_login(client, unique_email)
+async def test_refresh_rotates_token_pair(client: AsyncClient, unique_email: str, stub_background_tasks):
+    login_response = await _register_and_login(client, unique_email, stub_background_tasks)
     original_access_token = login_response.json()["access_token"]
     original_refresh_cookie = login_response.cookies.get("refresh_token")
 
@@ -51,8 +53,8 @@ async def test_refresh_rotates_token_pair(client: AsyncClient, unique_email: str
 
 
 @pytest.mark.asyncio
-async def test_reusing_a_rotated_refresh_token_is_rejected(client: AsyncClient, unique_email: str):
-    login_response = await _register_and_login(client, unique_email)
+async def test_reusing_a_rotated_refresh_token_is_rejected(client: AsyncClient, unique_email: str, stub_background_tasks):
+    login_response = await _register_and_login(client, unique_email, stub_background_tasks)
     original_refresh_cookie = login_response.cookies.get("refresh_token")
 
     first_refresh = await client.post("/api/v1/auth/refresh")
@@ -69,8 +71,8 @@ async def test_reusing_a_rotated_refresh_token_is_rejected(client: AsyncClient, 
 
 
 @pytest.mark.asyncio
-async def test_refresh_token_reuse_revokes_the_new_token_too(client: AsyncClient, unique_email: str):
-    login_response = await _register_and_login(client, unique_email)
+async def test_refresh_token_reuse_revokes_the_new_token_too(client: AsyncClient, unique_email: str, stub_background_tasks):
+    login_response = await _register_and_login(client, unique_email, stub_background_tasks)
     original_refresh_cookie = login_response.cookies.get("refresh_token")
 
     rotated = await client.post("/api/v1/auth/refresh")
@@ -89,8 +91,8 @@ async def test_refresh_token_reuse_revokes_the_new_token_too(client: AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_logout_revokes_refresh_token(client: AsyncClient, unique_email: str):
-    login_response = await _register_and_login(client, unique_email)
+async def test_logout_revokes_refresh_token(client: AsyncClient, unique_email: str, stub_background_tasks):
+    login_response = await _register_and_login(client, unique_email, stub_background_tasks)
     original_refresh_cookie = login_response.cookies.get("refresh_token")
 
     logout_response = await client.post("/api/v1/auth/logout")

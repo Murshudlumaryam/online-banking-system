@@ -13,8 +13,42 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Register a new customer */
+        /** Register a new customer (a verification code is emailed before login is allowed) */
         post: operations["register_api_v1_auth_register_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/register/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm registration with the emailed OTP code */
+        post: operations["confirm_registration_api_v1_auth_register_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/register/resend-otp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resend the registration verification code (invalidates the previous one) */
+        post: operations["resend_registration_otp_api_v1_auth_register_resend_otp_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1159,6 +1193,16 @@ export interface components {
          * @enum {string}
          */
         CardStatus: "ACTIVE" | "BLOCKED" | "EXPIRED";
+        /** ConfirmRegistrationRequest */
+        ConfirmRegistrationRequest: {
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Otp Code */
+            otp_code: string;
+        };
         /** ConfirmTransferRequest */
         ConfirmTransferRequest: {
             /** Otp Code */
@@ -1575,6 +1619,11 @@ export interface components {
             /** Email */
             email: string;
             customer: components["schemas"]["CustomerSummary"];
+            /**
+             * Otp Expires In Seconds
+             * @default 0
+             */
+            otp_expires_in_seconds: number;
         };
         /** ResendOtpResponse */
         ResendOtpResponse: {
@@ -1583,6 +1632,24 @@ export interface components {
             /**
              * Message
              * @default A new OTP has been sent. The previous code no longer works.
+             */
+            message: string;
+        };
+        /** ResendRegistrationOtpRequest */
+        ResendRegistrationOtpRequest: {
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+        };
+        /** ResendRegistrationOtpResponse */
+        ResendRegistrationOtpResponse: {
+            /** Otp Expires In Seconds */
+            otp_expires_in_seconds: number;
+            /**
+             * Message
+             * @default A new code has been sent. The previous code no longer works.
              */
             message: string;
         };
@@ -1816,6 +1883,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RegisterResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_registration_api_v1_auth_register_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmRegistrationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resend_registration_otp_api_v1_auth_register_resend_otp_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResendRegistrationOtpRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResendRegistrationOtpResponse"];
                 };
             };
             /** @description Validation Error */

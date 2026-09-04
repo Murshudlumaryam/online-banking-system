@@ -23,6 +23,16 @@ export const authService = {
     return unwrap(api.POST("/api/v1/auth/register", { body: payload }));
   },
 
+  async confirmRegistration(userId: string, otpCode: string): Promise<void> {
+    await unwrap(
+      api.POST("/api/v1/auth/register/confirm", { body: { user_id: userId, otp_code: otpCode } }),
+    );
+  },
+
+  async resendRegistrationOtp(userId: string): Promise<{ otp_expires_in_seconds: number; message: string }> {
+    return unwrap(api.POST("/api/v1/auth/register/resend-otp", { body: { user_id: userId } }));
+  },
+
   async login(email: string, password: string) {
     return unwrap(api.POST("/api/v1/auth/login", { body: { email, password } }));
   },

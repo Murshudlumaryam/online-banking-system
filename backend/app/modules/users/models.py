@@ -29,6 +29,14 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Gates login, not registration itself — the account is created
+    # immediately (see AuthService.register), but login is refused until
+    # the registration OTP sent by email is confirmed (see
+    # AuthService.confirm_registration). Existing rows from before this
+    # field existed default to True at the database level (migration
+    # 0013) so no one already registered gets locked out; new signups get
+    # False explicitly in application code (see UserRepository.create).
+    email_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # --- TOTP-based two-factor authentication (Phase 7) ---

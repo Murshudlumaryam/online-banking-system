@@ -71,6 +71,41 @@ class EmailAlreadyRegisteredError(ConflictError):
         super().__init__("An account with this email already exists")
 
 
+class EmailNotVerifiedError(ForbiddenError):
+    error_code = "EMAIL_NOT_VERIFIED"
+
+    def __init__(self) -> None:
+        super().__init__("Confirm your email with the code we sent before logging in")
+
+
+class RegistrationAlreadyConfirmedError(ConflictError):
+    error_code = "REGISTRATION_ALREADY_CONFIRMED"
+
+    def __init__(self) -> None:
+        super().__init__("This email is already verified")
+
+
+class RegistrationOtpExpiredError(UnauthorizedError):
+    error_code = "REGISTRATION_OTP_EXPIRED"
+
+    def __init__(self) -> None:
+        super().__init__("This code has expired — request a new one")
+
+
+class RegistrationOtpInvalidError(UnauthorizedError):
+    error_code = "REGISTRATION_OTP_INVALID"
+
+    def __init__(self, attempts_remaining: int) -> None:
+        super().__init__(f"That code is incorrect ({attempts_remaining} attempt(s) remaining)")
+
+
+class RegistrationOtpMaxAttemptsError(ForbiddenError):
+    error_code = "REGISTRATION_OTP_MAX_ATTEMPTS"
+
+    def __init__(self) -> None:
+        super().__init__("Too many incorrect attempts — request a new code")
+
+
 class InvalidRefreshTokenError(UnauthorizedError):
     error_code = "INVALID_REFRESH_TOKEN"
 

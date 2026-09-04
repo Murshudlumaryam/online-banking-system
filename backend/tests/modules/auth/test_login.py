@@ -23,9 +23,11 @@ def _register_payload(email: str) -> dict:
 
 @pytest.mark.asyncio
 async def test_login_with_correct_credentials_returns_access_token_and_refresh_cookie(
-    client: AsyncClient, unique_email: str
+    client: AsyncClient, unique_email: str, stub_background_tasks
 ):
-    await client.post("/api/v1/auth/register", json=_register_payload(unique_email))
+    from tests.conftest import register_and_confirm
+
+    await register_and_confirm(client, stub_background_tasks, _register_payload(unique_email))
 
     response = await client.post(
         "/api/v1/auth/login", json={"email": unique_email, "password": "StrongPass1"}

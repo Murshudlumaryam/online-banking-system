@@ -68,9 +68,11 @@ async def test_create_list_update_delete_beneficiary(
 
 @pytest.mark.asyncio
 async def test_cannot_access_another_customers_beneficiary(
-    client: AsyncClient, db_session, registered_customer: dict, unique_email: str
+    client: AsyncClient, db_session, registered_customer: dict, unique_email: str, stub_background_tasks
 ):
     from datetime import date
+
+    from tests.conftest import register_and_confirm
 
     customer = registered_customer["customer"]
     accounts = AccountRepository(db_session)
@@ -87,9 +89,10 @@ async def test_cannot_access_another_customers_beneficiary(
     beneficiary_id = create_response.json()["id"]
 
     other_email = f"other_{unique_email}"
-    await client.post(
-        "/api/v1/auth/register",
-        json={
+    await register_and_confirm(
+        client,
+        stub_background_tasks,
+        {
             "email": other_email,
             "password": "StrongPass1",
             "first_name": "Other",

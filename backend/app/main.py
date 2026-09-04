@@ -62,6 +62,15 @@ def _build_rate_limits() -> dict[str, tuple[int, int]]:
     prefix = settings.api_v1_prefix
     return {
         f"{prefix}/auth/login": (settings.rate_limit_login_per_minute, 60),
+        # More specific than /auth/register below, and listed first so it
+        # matches before it: entering a 6-digit code by hand needs room
+        # for a mistyped attempt or two within a minute, which the
+        # register endpoint's tighter anti-spam limit was never sized for
+        # — found by a test making 5 legitimate wrong-code confirm
+        # attempts in a row and hitting 429 before ever reaching the
+        # confirm endpoint's own max_attempts=5 check.
+        f"{prefix}/auth/register/confirm": (settings.rate_limit_login_per_minute, 60),
+        f"{prefix}/auth/register/resend-otp": (settings.rate_limit_password_reset_per_minute, 60),
         f"{prefix}/auth/register": (settings.rate_limit_register_per_minute, 60),
         f"{prefix}/auth/password/reset-request": (settings.rate_limit_password_reset_per_minute, 60),
         f"{prefix}/auth": (settings.rate_limit_login_per_minute, 60),  # refresh/logout/change-password

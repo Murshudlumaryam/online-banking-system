@@ -63,8 +63,10 @@ async def test_get_card_details(client: AsyncClient, db_session, registered_cust
 
 @pytest.mark.asyncio
 async def test_cannot_access_another_customers_card(
-    client: AsyncClient, db_session, registered_customer: dict, unique_email: str
+    client: AsyncClient, db_session, registered_customer: dict, unique_email: str, stub_background_tasks
 ):
+    from tests.conftest import register_and_confirm
+
     customer1 = registered_customer["customer"]
     accounts = AccountRepository(db_session)
     cards = CardRepository(db_session)
@@ -82,9 +84,10 @@ async def test_cannot_access_another_customers_card(
     await db_session.commit()
 
     other_email = f"other_{unique_email}"
-    await client.post(
-        "/api/v1/auth/register",
-        json={
+    await register_and_confirm(
+        client,
+        stub_background_tasks,
+        {
             "email": other_email,
             "password": "StrongPass1",
             "first_name": "Other",

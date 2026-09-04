@@ -97,6 +97,12 @@ def write_audit_log_task(
 
 
 _EMAIL_TEMPLATES: dict[str, tuple[str, str]] = {
+    "registration_otp": (
+        "Confirm your email to finish signing up",
+        "Your verification code is: {otp_code}\n\n"
+        "Enter this in the app to finish creating your account. This code "
+        "expires shortly. If you didn't try to sign up, you can ignore this email.",
+    ),
     "transfer_otp": (
         "Your transfer confirmation code",
         "Your one-time code to confirm transfer {reference_number} is: {otp_code}\n\n"

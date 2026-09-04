@@ -26,6 +26,7 @@ class AuditStatus(str, Enum):
 class AuditAction:
     # --- Registration ---
     CUSTOMER_REGISTERED = "CUSTOMER_REGISTERED"
+    REGISTRATION_EMAIL_VERIFIED = "REGISTRATION_EMAIL_VERIFIED"
 
     # --- Login / session ---
     LOGIN_SUCCESS = "LOGIN_SUCCESS"

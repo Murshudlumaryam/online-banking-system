@@ -1,3 +1,5 @@
+import uuid
+
 from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +14,7 @@ from app.modules.auth.cookies import (
 from app.modules.auth.dependencies import get_client_ip, get_current_user
 from app.modules.auth.schemas import (
     AccessTokenResponse,
+    ConfirmRegistrationRequest,
     DisableTwoFactorRequest,
     EnableTwoFactorRequest,
     LoginRequest,
@@ -21,6 +24,8 @@ from app.modules.auth.schemas import (
     PasswordResetRequest,
     RegisterCustomerRequest,
     RegisterResponse,
+    ResendRegistrationOtpRequest,
+    ResendRegistrationOtpResponse,
     SetupTwoFactorResponse,
     VerifyMfaLoginRequest,
 )
@@ -34,7 +39,7 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
     "/register",
     response_model=RegisterResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Register a new customer",
+    summary="Register a new customer (a verification code is emailed before login is allowed)",
 )
 async def register(
     payload: RegisterCustomerRequest,
@@ -42,8 +47,62 @@ async def register(
     session: AsyncSession = Depends(get_db),
 ) -> RegisterResponse:
     service = AuthService(session)
-    user = await service.register(payload, ip_address=get_client_ip(request))
-    return RegisterResponse.model_validate(user)
+    user, otp_expires_in_seconds = await service.register(payload, ip_address=get_client_ip(request))
+    response = RegisterResponse.model_validate(user)
+    response.otp_expires_in_seconds = otp_expires_in_seconds
+    return response
+
+
+@router.post(
+    "/register/confirm",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Confirm registration with the emailed OTP code",
+)
+async def confirm_registration(
+    payload: ConfirmRegistrationRequest,
+    session: AsyncSession = Depends(get_db),
+) -> None:
+    service = AuthService(session)
+    await service.confirm_registration(payload.user_id, payload.otp_code)
+
+
+@router.post(
+    "/register/resend-otp",
+    response_model=ResendRegistrationOtpResponse,
+    summary="Resend the registration verification code (invalidates the previous one)",
+)
+async def resend_registration_otp(
+    payload: ResendRegistrationOtpRequest,
+    session: AsyncSession = Depends(get_db),
+) -> ResendRegistrationOtpResponse:
+    service = AuthService(session)
+    expires_in_seconds = await service.resend_registration_otp(payload.user_id)
+    return ResendRegistrationOtpResponse(otp_expires_in_seconds=expires_in_seconds)
+
+
+@router.get(
+    "/register/{user_id}/debug-otp",
+    include_in_schema=False,
+    summary="[test environment only] Reads the OTP an e2e test just triggered",
+)
+async def debug_get_registration_otp(user_id: uuid.UUID) -> dict:
+    from fastapi import HTTPException
+
+    from app.core import test_otp_store
+
+    # No auth dependency here, deliberately: the whole point is reading
+    # the code for a user who by definition hasn't verified their email
+    # yet, so they cannot have a valid session to authenticate with. Same
+    # as transactions' equivalent, this is gated purely by
+    # is_test_environment() and returns an identical 404 in every other
+    # environment.
+    if not test_otp_store.is_enabled():
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    code = test_otp_store.pop(user_id)
+    if code is None:
+        raise HTTPException(status_code=404, detail="Not Found")
+    return {"otp_code": code}
 
 
 @router.post(

@@ -3,18 +3,24 @@ import uuid
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.background_tasks.tasks import dispatch_audit_log, write_audit_log_task
+from app.background_tasks.tasks import dispatch_audit_log, send_notification_task, write_audit_log_task
 from app.core.config import get_settings
 from app.core.crypto import decrypt_secret, encrypt_secret
 from app.core.exceptions import (
     AccountBlockedError,
     ConflictError,
     EmailAlreadyRegisteredError,
+    EmailNotVerifiedError,
     InvalidCredentialsError,
     InvalidRefreshTokenError,
     InvalidResetTokenError,
     InvalidTotpCodeError,
     MfaChallengeInvalidError,
+    NotFoundError,
+    RegistrationAlreadyConfirmedError,
+    RegistrationOtpExpiredError,
+    RegistrationOtpInvalidError,
+    RegistrationOtpMaxAttemptsError,
     TwoFactorAlreadyEnabledError,
     TwoFactorNotEnabledError,
     TwoFactorSetupNotStartedError,
@@ -25,19 +31,22 @@ from app.core.security import (
     create_access_token,
     create_mfa_challenge_token,
     create_password_reset_token,
+    generate_otp_code,
     generate_refresh_token,
     generate_totp_secret,
+    hash_otp_code,
     hash_password,
     hash_refresh_token,
     refresh_token_expiry,
     verify_mfa_challenge_token,
+    verify_otp_code,
     verify_password,
     verify_password_reset_token,
     verify_totp_code,
 )
 from app.modules.audit_logs.actions import AuditAction, AuditStatus
 from app.modules.auth.models import RefreshToken
-from app.modules.auth.repository import RefreshTokenRepository
+from app.modules.auth.repository import RefreshTokenRepository, RegistrationConfirmationRepository
 from app.modules.auth.schemas import (
     DisableTwoFactorRequest,
     EnableTwoFactorRequest,
@@ -53,6 +62,8 @@ from app.modules.customers.repository import CustomerRepository
 from app.modules.users.models import User
 from app.modules.users.repository import UserRepository
 
+settings = get_settings()
+
 
 class AuthService:
     def __init__(self, session: AsyncSession):
@@ -60,11 +71,14 @@ class AuthService:
         self._users = UserRepository(session)
         self._customers = CustomerRepository(session)
         self._refresh_tokens = RefreshTokenRepository(session)
+        self._registration_confirmations = RegistrationConfirmationRepository(session)
 
     # ------------------------------------------------------------------
     # Registration
     # ------------------------------------------------------------------
-    async def register(self, payload: RegisterCustomerRequest, *, ip_address: str | None) -> User:
+    async def register(
+        self, payload: RegisterCustomerRequest, *, ip_address: str | None
+    ) -> tuple[User, int]:
         if await self._users.email_exists(payload.email):
             raise EmailAlreadyRegisteredError()
 
@@ -107,7 +121,85 @@ class AuthService:
         await self._session.refresh(user)
 
         write_audit_log_task.delay(str(user.id), "CUSTOMER_REGISTERED", "user", str(user.id), ip_address, None)
-        return user
+
+        otp_expires_in_seconds = await self._issue_registration_otp(user)
+        return user, otp_expires_in_seconds
+
+    async def _issue_registration_otp(self, user: User) -> int:
+        """Shared by register() and resend_registration_otp() — generates a
+        fresh code, stores its hash, and dispatches it over the configured
+        channel. Mirrors TransactionService.initiate_transfer/resend_otp's
+        shape exactly (see that module for the full rationale on
+        OTP_DELIVERY_CHANNEL and why the code itself is never logged)."""
+        from datetime import datetime, timedelta, timezone
+
+        from app.core import test_otp_store
+
+        otp_code = generate_otp_code()
+        expires_in_seconds = settings.otp_expire_minutes * 60
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.otp_expire_minutes)
+
+        confirmation = await self._registration_confirmations.get_by_user_id(user.id)
+        if confirmation is None:
+            self._registration_confirmations.create(
+                user_id=user.id, otp_code_hash=hash_otp_code(otp_code), expires_at=expires_at
+            )
+        else:
+            await self._registration_confirmations.reissue(
+                confirmation, otp_code_hash=hash_otp_code(otp_code), expires_at=expires_at
+            )
+        await self._session.commit()
+        test_otp_store.capture(user.id, otp_code)
+
+        channel_setting = settings.otp_delivery_channel
+        channels = ["email", "sms"] if channel_setting == "both" else [channel_setting]
+        for channel in channels:
+            send_notification_task.delay(
+                str(user.id), channel, "registration_otp", {"otp_code": otp_code}
+            )
+        return expires_in_seconds
+
+    async def confirm_registration(self, user_id: uuid.UUID, otp_code: str) -> None:
+        user = await self._users.get_by_id(user_id)
+        if user is None:
+            raise NotFoundError("Registration not found")
+        if user.email_verified:
+            raise RegistrationAlreadyConfirmedError()
+
+        confirmation = await self._registration_confirmations.get_by_user_id(user_id)
+        if confirmation is None:
+            raise NotFoundError("No verification code found for this registration")
+
+        if self._registration_confirmations.is_expired(confirmation):
+            raise RegistrationOtpExpiredError()
+
+        if self._registration_confirmations.attempts_exhausted(confirmation):
+            raise RegistrationOtpMaxAttemptsError()
+
+        if not verify_otp_code(otp_code, confirmation.otp_code_hash):
+            await self._registration_confirmations.register_failed_attempt(confirmation)
+            attempts_remaining = confirmation.max_attempts - confirmation.attempts
+            await self._session.commit()
+            if attempts_remaining <= 0:
+                raise RegistrationOtpMaxAttemptsError()
+            raise RegistrationOtpInvalidError(attempts_remaining)
+
+        user.email_verified = True
+        await self._registration_confirmations.mark_verified(confirmation)
+        await self._session.commit()
+
+        dispatch_audit_log(
+            str(user.id), AuditAction.REGISTRATION_EMAIL_VERIFIED, "user", str(user.id),
+            None, None, status=AuditStatus.SUCCESS.value,
+        )
+
+    async def resend_registration_otp(self, user_id: uuid.UUID) -> int:
+        user = await self._users.get_by_id(user_id)
+        if user is None:
+            raise NotFoundError("Registration not found")
+        if user.email_verified:
+            raise RegistrationAlreadyConfirmedError()
+        return await self._issue_registration_otp(user)
 
     # ------------------------------------------------------------------
     # Login
@@ -133,6 +225,10 @@ class AuthService:
         if user.is_blocked or not user.is_active:
             write_audit_log_task.delay(str(user.id), "LOGIN_BLOCKED", "user", str(user.id), ip_address, None)
             raise AccountBlockedError()
+
+        if not user.email_verified:
+            write_audit_log_task.delay(str(user.id), "LOGIN_EMAIL_NOT_VERIFIED", "user", str(user.id), ip_address, None)
+            raise EmailNotVerifiedError()
 
         if user.totp_enabled:
             write_audit_log_task.delay(

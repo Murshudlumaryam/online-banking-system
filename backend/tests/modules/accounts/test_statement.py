@@ -99,17 +99,20 @@ async def test_statement_respects_date_range_query_params(
 
 @pytest.mark.asyncio
 async def test_cannot_get_statement_for_another_customers_account(
-    client: AsyncClient, db_session, registered_customer: dict, unique_email: str
+    client: AsyncClient, db_session, registered_customer: dict, unique_email: str, stub_background_tasks
 ):
     from datetime import date as date_cls
+
+    from tests.conftest import register_and_confirm
 
     customer = registered_customer["customer"]
     account = await _make_active_account(db_session, customer.id, "STMT0005")
 
     other_email = f"stmt_intruder_{unique_email}"
-    await client.post(
-        "/api/v1/auth/register",
-        json={
+    await register_and_confirm(
+        client,
+        stub_background_tasks,
+        {
             "email": other_email,
             "password": "StrongPass1",
             "first_name": "Other",

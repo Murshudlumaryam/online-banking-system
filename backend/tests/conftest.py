@@ -42,6 +42,41 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.main import create_app
 
+
+async def register_and_confirm(client: AsyncClient, stub_background_tasks, payload: dict) -> dict:
+    """
+    Shared by every test that needs a real, logged-in-capable account
+    without going through the full `registered_customer` fixture (e.g.
+    tests that need a specific email/payload, or need the raw register
+    response). Registers, extracts the registration OTP from the
+    intercepted send_notification_task.delay(...) call (same mechanism as
+    `registered_customer` — see that fixture's docstring for why not
+    app.core.test_otp_store), and confirms it. Does NOT log in — callers
+    that need a session still call POST /auth/login themselves afterward,
+    same as before this helper existed.
+
+    Returns the raw JSON body of the register response (so callers that
+    need `id`/`customer` from it don't have to register again).
+    """
+    register = await client.post("/api/v1/auth/register", json=payload)
+    if register.status_code != 201:
+        return register.json()  # let the caller's own assertions surface the failure
+
+    user_id = register.json()["id"]
+    otp_calls = [
+        args for name, args in stub_background_tasks
+        if name == "send_notification_task" and args[2] == "registration_otp" and args[0] == user_id
+    ]
+    assert otp_calls, "expected a registration_otp notification to have been dispatched"
+    otp_code = otp_calls[-1][3]["otp_code"]
+
+    confirm = await client.post(
+        "/api/v1/auth/register/confirm", json={"user_id": user_id, "otp_code": otp_code}
+    )
+    assert confirm.status_code == 204, f"registration confirm failed: {confirm.text}"
+    return register.json()
+
+
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL",
     "postgresql+asyncpg://banking_user:banking_pass@localhost:5432/banking_test_db",
@@ -189,7 +224,10 @@ async def admin_headers(client: AsyncClient, db_session, unique_email: str) -> d
 
     admin_email = f"admin_{unique_email}"
     users = UserRepository(db_session)
-    users.create(email=admin_email, password_hash=hash_password("AdminStrongPass1"), role=UserRole.ADMIN)
+    users.create(
+        email=admin_email, password_hash=hash_password("AdminStrongPass1"), role=UserRole.ADMIN,
+        email_verified=True,
+    )
     await db_session.commit()
 
     login = await client.post(
@@ -200,17 +238,29 @@ async def admin_headers(client: AsyncClient, db_session, unique_email: str) -> d
 
 
 @pytest_asyncio.fixture
-async def registered_customer(client: AsyncClient, db_session, unique_email: str) -> dict:
+async def registered_customer(
+    client: AsyncClient, db_session, unique_email: str, stub_background_tasks
+) -> dict:
     """
-    Registers + logs in a fresh customer, returning tokens, headers, and the
-    ORM Customer row (loaded in the same test-scoped session so it can be
-    used to seed accounts/cards directly via repositories).
+    Registers + confirms the registration OTP + logs in a fresh customer,
+    returning tokens, headers, and the ORM Customer row (loaded in the
+    same test-scoped session so it can be used to seed accounts/cards
+    directly via repositories).
+
+    Depends on stub_background_tasks (not app.core.test_otp_store) for the
+    same reason tests/modules/transactions/test_transfer.py's OTP tests
+    do: test_otp_store is gated behind ENVIRONMENT=test, which this suite
+    deliberately does not set (see this file's module docstring on having
+    no Redis dependency) — the code is instead read back from the
+    intercepted send_notification_task.delay(...) call, which is how
+    every other OTP flow in this test suite gets its code.
     """
     from datetime import date
 
     from sqlalchemy import select
 
     from app.modules.customers.models import Customer
+    from app.modules.users.models import User
 
     payload = {
         "email": unique_email,
@@ -222,12 +272,26 @@ async def registered_customer(client: AsyncClient, db_session, unique_email: str
         "national_id": f"TEST{uuid.uuid4().hex[:12].upper()}",
     }
     await client.post("/api/v1/auth/register", json=payload)
+
+    result = await db_session.execute(select(User).where(User.email == unique_email.lower()))
+    user = result.scalar_one()
+
+    otp_calls = [
+        args for name, args in stub_background_tasks
+        if name == "send_notification_task" and args[2] == "registration_otp"
+    ]
+    assert otp_calls, "expected a registration_otp notification to have been dispatched"
+    otp_code = otp_calls[-1][3]["otp_code"]
+
+    confirm = await client.post(
+        "/api/v1/auth/register/confirm", json={"user_id": str(user.id), "otp_code": otp_code}
+    )
+    assert confirm.status_code == 204, f"registration confirm failed: {confirm.text}"
+
     login = await client.post(
         "/api/v1/auth/login", json={"email": unique_email, "password": "StrongPass1"}
     )
     tokens = login.json()
-
-    from app.modules.users.models import User
 
     result = await db_session.execute(
         select(Customer).join(User, User.id == Customer.user_id).where(User.email == unique_email.lower())

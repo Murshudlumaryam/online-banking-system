@@ -46,6 +46,7 @@ export interface RegisterResponse {
   id: string;
   email: string;
   customer: CustomerSummary;
+  otp_expires_in_seconds: number;
 }
 
 export interface CustomerProfile {

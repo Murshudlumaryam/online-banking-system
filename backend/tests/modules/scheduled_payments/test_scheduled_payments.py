@@ -105,9 +105,11 @@ async def test_create_scheduled_payment_currency_mismatch_fails(
 
 @pytest.mark.asyncio
 async def test_cannot_cancel_another_customers_scheduled_payment(
-    client: AsyncClient, db_session, registered_customer: dict, unique_email: str
+    client: AsyncClient, db_session, registered_customer: dict, unique_email: str, stub_background_tasks
 ):
     from datetime import date
+
+    from tests.conftest import register_and_confirm
 
     customer = registered_customer["customer"]
     sender = await _make_active_account(db_session, customer.id, "SCHED0005")
@@ -127,9 +129,10 @@ async def test_cannot_cancel_another_customers_scheduled_payment(
     schedule_id = create_response.json()["id"]
 
     other_email = f"sched_intruder_{unique_email}"
-    await client.post(
-        "/api/v1/auth/register",
-        json={
+    await register_and_confirm(
+        client,
+        stub_background_tasks,
+        {
             "email": other_email,
             "password": "StrongPass1",
             "first_name": "Other",

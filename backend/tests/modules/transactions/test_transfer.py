@@ -32,8 +32,10 @@ async def _make_active_account(db_session, customer_id, account_number, currency
     return account
 
 
-async def _register_second_customer(client: AsyncClient, email: str) -> dict:
+async def _register_second_customer(client: AsyncClient, email: str, stub_background_tasks) -> dict:
     from datetime import date
+
+    from tests.conftest import register_and_confirm
 
     payload = {
         "email": email,
@@ -44,7 +46,7 @@ async def _register_second_customer(client: AsyncClient, email: str) -> dict:
         "phone_number": "+994701234000",
         "national_id": f"TEST{uuid.uuid4().hex[:12].upper()}",
     }
-    await client.post("/api/v1/auth/register", json=payload)
+    await register_and_confirm(client, stub_background_tasks, payload)
     login = await client.post("/api/v1/auth/login", json={"email": email, "password": "StrongPass1"})
     return login.json()
 
@@ -65,7 +67,7 @@ async def test_transfer_otp_is_delivered_via_email_by_default(
     sender = await _make_active_account(db_session, sender_customer.id, "TXNOTP01", "AZN", "500.00")
 
     other_email = f"receiver_{unique_email}"
-    await _register_second_customer(client, other_email)
+    await _register_second_customer(client, other_email, stub_background_tasks)
     from sqlalchemy import select
 
     from app.modules.customers.models import Customer
@@ -106,7 +108,7 @@ async def test_resend_otp_invalidates_the_previous_code(
     sender = await _make_active_account(db_session, sender_customer.id, "TXNRSD01", "AZN", "500.00")
 
     other_email = f"receiver_{unique_email}"
-    await _register_second_customer(client, other_email)
+    await _register_second_customer(client, other_email, stub_background_tasks)
     from sqlalchemy import select
 
     from app.modules.customers.models import Customer
@@ -171,7 +173,7 @@ async def test_resend_otp_resets_the_attempt_counter(
     sender = await _make_active_account(db_session, sender_customer.id, "TXNRSD03", "AZN", "500.00")
 
     other_email = f"receiver2_{unique_email}"
-    await _register_second_customer(client, other_email)
+    await _register_second_customer(client, other_email, stub_background_tasks)
     from sqlalchemy import select
 
     from app.modules.customers.models import Customer
@@ -225,7 +227,7 @@ async def test_cannot_resend_otp_for_someone_elses_transaction(
     sender = await _make_active_account(db_session, sender_customer.id, "TXNRSD05", "AZN", "500.00")
 
     other_email = f"receiver3_{unique_email}"
-    other_tokens = await _register_second_customer(client, other_email)
+    other_tokens = await _register_second_customer(client, other_email, stub_background_tasks)
     from sqlalchemy import select
 
     from app.modules.customers.models import Customer
@@ -262,7 +264,7 @@ async def test_same_currency_transfer_end_to_end(
     sender = await _make_active_account(db_session, sender_customer.id, "TXN0001", "AZN", "500.00")
 
     other_email = f"receiver_{unique_email}"
-    await _register_second_customer(client, other_email)
+    await _register_second_customer(client, other_email, stub_background_tasks)
     from sqlalchemy import select
 
     from app.modules.customers.models import Customer
@@ -329,7 +331,7 @@ async def test_cross_currency_transfer_converts_amount(
     sender = await _make_active_account(db_session, sender_customer.id, "TXN0003", "USD", "200.00")
 
     other_email = f"recv2_{unique_email}"
-    await _register_second_customer(client, other_email)
+    await _register_second_customer(client, other_email, stub_background_tasks)
     from sqlalchemy import select
 
     from app.modules.customers.models import Customer
@@ -371,13 +373,13 @@ async def test_cross_currency_transfer_converts_amount(
 
 @pytest.mark.asyncio
 async def test_transfer_without_exchange_rate_fails(
-    client: AsyncClient, db_session, registered_customer: dict, unique_email: str
+    client: AsyncClient, db_session, registered_customer: dict, unique_email: str, stub_background_tasks
 ):
     sender_customer = registered_customer["customer"]
     sender = await _make_active_account(db_session, sender_customer.id, "TXN0005", "GBP", "100.00")
 
     other_email = f"recv3_{unique_email}"
-    await _register_second_customer(client, other_email)
+    await _register_second_customer(client, other_email, stub_background_tasks)
     from sqlalchemy import select
 
     from app.modules.customers.models import Customer
@@ -405,13 +407,13 @@ async def test_transfer_without_exchange_rate_fails(
 
 @pytest.mark.asyncio
 async def test_insufficient_balance_rejected(
-    client: AsyncClient, db_session, registered_customer: dict, unique_email: str
+    client: AsyncClient, db_session, registered_customer: dict, unique_email: str, stub_background_tasks
 ):
     sender_customer = registered_customer["customer"]
     sender = await _make_active_account(db_session, sender_customer.id, "TXN0007", "AZN", "10.00")
 
     other_email = f"recv4_{unique_email}"
-    await _register_second_customer(client, other_email)
+    await _register_second_customer(client, other_email, stub_background_tasks)
     from sqlalchemy import select
 
     from app.modules.customers.models import Customer
@@ -634,7 +636,7 @@ async def test_cannot_confirm_someone_elses_transaction(
     otp_code = _extract_otp(stub_background_tasks)
 
     other_email = f"intruder_{unique_email}"
-    other_tokens = await _register_second_customer(client, other_email)
+    other_tokens = await _register_second_customer(client, other_email, stub_background_tasks)
     other_headers = {"Authorization": f"Bearer {other_tokens['access_token']}"}
 
     response = await client.post(

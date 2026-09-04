@@ -26,8 +26,10 @@ class UserRepository:
     async def email_exists(self, email: str) -> bool:
         return await self.get_by_email(email) is not None
 
-    def create(self, *, email: str, password_hash: str, role: UserRole = UserRole.CUSTOMER) -> User:
-        user = User(email=email.lower(), password_hash=password_hash, role=role)
+    def create(
+        self, *, email: str, password_hash: str, role: UserRole = UserRole.CUSTOMER, email_verified: bool = False
+    ) -> User:
+        user = User(email=email.lower(), password_hash=password_hash, role=role, email_verified=email_verified)
         self._session.add(user)
         return user
 

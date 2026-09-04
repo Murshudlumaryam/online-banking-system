@@ -290,7 +290,9 @@ class AdminService:
             raise ConflictError("A customer with this national ID already exists")
 
         try:
-            user = users.create(email=payload.email, password_hash=hash_password(payload.temporary_password))
+            user = users.create(
+                email=payload.email, password_hash=hash_password(payload.temporary_password), email_verified=True
+            )
             await self._session.flush()
 
             customer = self._customers.create(

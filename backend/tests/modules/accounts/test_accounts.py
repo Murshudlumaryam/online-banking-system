@@ -67,7 +67,7 @@ async def test_get_account_balance(client: AsyncClient, db_session, registered_c
 
 @pytest.mark.asyncio
 async def test_cannot_access_another_customers_account(
-    client: AsyncClient, db_session, registered_customer: dict, unique_email: str
+    client: AsyncClient, db_session, registered_customer: dict, unique_email: str, stub_background_tasks
 ):
     # Seed an account for customer #1.
     customer1 = registered_customer["customer"]
@@ -80,10 +80,13 @@ async def test_cannot_access_another_customers_account(
     # Register a second, unrelated customer.
     from datetime import date
 
+    from tests.conftest import register_and_confirm
+
     other_email = f"other_{unique_email}"
-    await client.post(
-        "/api/v1/auth/register",
-        json={
+    await register_and_confirm(
+        client,
+        stub_background_tasks,
+        {
             "email": other_email,
             "password": "StrongPass1",
             "first_name": "Other",

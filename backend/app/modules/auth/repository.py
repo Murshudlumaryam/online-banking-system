@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.auth.models import RefreshToken
+from app.modules.auth.models import RefreshToken, RegistrationConfirmation
 
 
 class RefreshTokenRepository:
@@ -46,3 +46,56 @@ class RefreshTokenRepository:
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=timezone.utc)
         return token.revoked_at is None and expires_at > now
+
+
+class RegistrationConfirmationRepository:
+    """Mirrors app.modules.transactions.repository.TransferConfirmationRepository
+    exactly — same hash/expiry/attempts/reissue shape, just keyed by
+    user_id instead of transaction_id. See RegistrationConfirmation's
+    model docstring for why this isn't a shared generic OTP table."""
+
+    def __init__(self, session: AsyncSession):
+        self._session = session
+
+    async def get_by_user_id(self, user_id: uuid.UUID) -> RegistrationConfirmation | None:
+        result = await self._session.execute(
+            select(RegistrationConfirmation).where(RegistrationConfirmation.user_id == user_id)
+        )
+        return result.scalar_one_or_none()
+
+    def create(
+        self, *, user_id: uuid.UUID, otp_code_hash: str, expires_at: datetime
+    ) -> RegistrationConfirmation:
+        confirmation = RegistrationConfirmation(
+            user_id=user_id, otp_code_hash=otp_code_hash, expires_at=expires_at
+        )
+        self._session.add(confirmation)
+        return confirmation
+
+    async def register_failed_attempt(self, confirmation: RegistrationConfirmation) -> None:
+        confirmation.attempts += 1
+        self._session.add(confirmation)
+
+    async def reissue(
+        self, confirmation: RegistrationConfirmation, *, otp_code_hash: str, expires_at: datetime
+    ) -> None:
+        confirmation.otp_code_hash = otp_code_hash
+        confirmation.expires_at = expires_at
+        confirmation.attempts = 0
+        self._session.add(confirmation)
+
+    async def mark_verified(self, confirmation: RegistrationConfirmation) -> None:
+        confirmation.verified_at = datetime.now(timezone.utc)
+        self._session.add(confirmation)
+
+    @staticmethod
+    def is_expired(confirmation: RegistrationConfirmation) -> bool:
+        now = datetime.now(timezone.utc)
+        expires_at = confirmation.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        return expires_at <= now
+
+    @staticmethod
+    def attempts_exhausted(confirmation: RegistrationConfirmation) -> bool:
+        return confirmation.attempts >= confirmation.max_attempts

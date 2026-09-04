@@ -21,9 +21,11 @@ def _register_payload(email: str) -> dict:
 
 @pytest.mark.asyncio
 async def test_change_password_requires_correct_current_password(
-    client: AsyncClient, unique_email: str
+    client: AsyncClient, unique_email: str, stub_background_tasks
 ):
-    await client.post("/api/v1/auth/register", json=_register_payload(unique_email))
+    from tests.conftest import register_and_confirm
+
+    await register_and_confirm(client, stub_background_tasks, _register_payload(unique_email))
     login = await client.post(
         "/api/v1/auth/login", json={"email": unique_email, "password": "StrongPass1"}
     )
@@ -58,9 +60,11 @@ async def test_change_password_requires_correct_current_password(
 
 @pytest.mark.asyncio
 async def test_password_change_revokes_existing_refresh_tokens(
-    client: AsyncClient, unique_email: str
+    client: AsyncClient, unique_email: str, stub_background_tasks
 ):
-    await client.post("/api/v1/auth/register", json=_register_payload(unique_email))
+    from tests.conftest import register_and_confirm
+
+    await register_and_confirm(client, stub_background_tasks, _register_payload(unique_email))
     login = await client.post(
         "/api/v1/auth/login", json={"email": unique_email, "password": "StrongPass1"}
     )
@@ -94,12 +98,15 @@ async def test_password_reset_request_does_not_reveal_user_existence(
 
 
 @pytest.mark.asyncio
-async def test_password_reset_confirm_with_valid_token(client: AsyncClient, db_session, unique_email: str):
+async def test_password_reset_confirm_with_valid_token(
+    client: AsyncClient, db_session, unique_email: str, stub_background_tasks
+):
     from sqlalchemy import select
 
     from app.modules.users.models import User
+    from tests.conftest import register_and_confirm
 
-    await client.post("/api/v1/auth/register", json=_register_payload(unique_email))
+    await register_and_confirm(client, stub_background_tasks, _register_payload(unique_email))
 
     result = await db_session.execute(select(User).where(User.email == unique_email.lower()))
     user = result.scalar_one()
