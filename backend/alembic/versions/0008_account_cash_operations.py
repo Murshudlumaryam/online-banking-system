@@ -23,6 +23,7 @@ def upgrade() -> None:
         name="cash_operation_type",
     )
     operation_type.create(op.get_bind(), checkfirst=True)
+    operation_type = postgresql.ENUM(name="cash_operation_type", create_type=False)
 
     op.create_table(
         "account_cash_operations",

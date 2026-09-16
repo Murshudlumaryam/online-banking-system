@@ -15,6 +15,7 @@ __pycache__/
 coverage.xml
 *.egg-info/
 /backend/openapi.json
+/backend/celerybeat-schedule
 
 # --- Node / frontend ---
 node_modules/
